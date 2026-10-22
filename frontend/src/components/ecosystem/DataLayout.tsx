@@ -9,9 +9,10 @@ import gsap from 'gsap';
 
 interface DataLayoutProps {
   progress: number;
+  onOpenMissionModal?: () => void;
 }
 
-export const DataLayout: React.FC<DataLayoutProps> = ({ progress }) => {
+export const DataLayout: React.FC<DataLayoutProps> = ({ progress, onOpenMissionModal }) => {
   const [activeSourceId, setActiveSourceId] = useState<string | null>(null);
   const [exploringSource, setExploringSource] = useState<DataSource | null>(null);
 
@@ -111,7 +112,7 @@ export const DataLayout: React.FC<DataLayoutProps> = ({ progress }) => {
 
         {/* 5. Final Statement Layer */}
         <div className="absolute inset-0 flex items-center justify-center z-40 pointer-events-none">
-          <FinalStatement progress={progress} />
+          <FinalStatement progress={progress} onOpenMissionModal={onOpenMissionModal} />
         </div>
       </div>
 

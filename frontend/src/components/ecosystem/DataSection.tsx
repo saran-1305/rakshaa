@@ -2,7 +2,11 @@ import React, { useRef, useEffect, useState } from 'react';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { DataLayout } from './DataLayout';
 
-export const DataSection: React.FC = () => {
+interface DataSectionProps {
+  onOpenMissionModal?: () => void;
+}
+
+export const DataSection: React.FC<DataSectionProps> = ({ onOpenMissionModal }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [scrollProgress, setScrollProgress] = useState(0);
 
@@ -32,7 +36,7 @@ export const DataSection: React.FC = () => {
       className="relative w-full h-[500vh] bg-transparent font-sans z-30"
       id="data-ecosystem"
     >
-      <DataLayout progress={scrollProgress} />
+      <DataLayout progress={scrollProgress} onOpenMissionModal={onOpenMissionModal} />
     </section>
   );
 };

@@ -1,7 +1,11 @@
 import React from 'react';
 import { Menu, ArrowRight } from 'lucide-react';
 
-export const HeroNavigation: React.FC = () => {
+interface HeroNavigationProps {
+  onOpenMissionModal?: () => void;
+}
+
+export const HeroNavigation: React.FC<HeroNavigationProps> = ({ onOpenMissionModal }) => {
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 px-6 sm:px-8 lg:px-12 py-4">
       <div className="max-w-screen-2xl mx-auto flex items-center justify-between bg-black/40 backdrop-blur-md border border-white/10 rounded-xl px-6 py-3">
@@ -29,11 +33,17 @@ export const HeroNavigation: React.FC = () => {
 
         {/* Right: CTA & Menu */}
         <div className="flex items-center gap-6">
-          <button className="hidden sm:flex items-center gap-2 text-sm font-semibold text-raksha-accent hover:text-raksha-accentLight transition-colors">
+          <button 
+            onClick={onOpenMissionModal}
+            className="hidden sm:flex items-center gap-2 text-sm font-semibold text-raksha-accent hover:text-raksha-accentLight transition-colors cursor-pointer"
+          >
             ENTER RAKSHA
             <ArrowRight className="w-4 h-4" />
           </button>
-          <button className="text-white hover:text-raksha-accent transition-colors">
+          <button 
+            onClick={onOpenMissionModal}
+            className="text-white hover:text-raksha-accent transition-colors cursor-pointer"
+          >
             <Menu className="w-6 h-6" />
           </button>
         </div>

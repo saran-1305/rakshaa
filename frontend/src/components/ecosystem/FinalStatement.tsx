@@ -3,13 +3,14 @@ import gsap from 'gsap';
 
 interface FinalStatementProps {
   progress: number;
+  onOpenMissionModal?: () => void;
 }
 
-export const FinalStatement: React.FC<FinalStatementProps> = ({ progress }) => {
+export const FinalStatement: React.FC<FinalStatementProps> = ({ progress, onOpenMissionModal }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const line1Ref = useRef<HTMLDivElement>(null);
   const line2Ref = useRef<HTMLDivElement>(null);
-  const btnRef = useRef<HTMLAnchorElement>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!containerRef.current || !line1Ref.current || !line2Ref.current) return;
@@ -48,13 +49,13 @@ export const FinalStatement: React.FC<FinalStatementProps> = ({ progress }) => {
         RAKSHA CONNECTS THE TWO.
       </div>
       
-      <a 
+      <button 
         ref={btnRef}
-        href="/overview"
-        className="mt-16 px-10 py-4 border-2 border-raksha-accent bg-raksha-accent/10 hover:bg-raksha-accent hover:text-black font-space-grotesk font-bold text-xl md:text-2xl tracking-widest uppercase text-white transition-all duration-300 pointer-events-auto opacity-0 translate-y-5"
+        onClick={onOpenMissionModal}
+        className="mt-16 px-10 py-4 border-2 border-raksha-accent bg-raksha-accent/10 hover:bg-raksha-accent hover:text-black font-space-grotesk font-bold text-xl md:text-2xl tracking-widest uppercase text-white transition-all duration-300 pointer-events-auto opacity-0 translate-y-5 cursor-pointer shadow-lg shadow-cyan-500/20"
       >
         EXPLORE NOW
-      </a>
+      </button>
     </div>
   );
 };

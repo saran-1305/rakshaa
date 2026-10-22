@@ -5,9 +5,10 @@ import { ArrowRight, ChevronDown } from 'lucide-react';
 
 interface HeroContentProps {
   refs: HeroRefs;
+  onOpenMissionModal?: () => void;
 }
 
-export const HeroContent: React.FC<HeroContentProps> = ({ refs }) => {
+export const HeroContent: React.FC<HeroContentProps> = ({ refs, onOpenMissionModal }) => {
   return (
     <div className="w-full flex flex-col justify-center pt-32 lg:pt-0 pb-16 lg:pb-0 z-10">
       <div ref={refs.initialText} className="flex flex-col gap-6">
@@ -34,14 +35,20 @@ export const HeroContent: React.FC<HeroContentProps> = ({ refs }) => {
 
         {/* CTAs */}
         <div ref={refs.ctas} className="flex items-center gap-4 mt-8 flex-wrap">
-          <button className="flex items-center gap-2 bg-raksha-accent text-raksha-900 px-8 py-4 text-sm font-semibold tracking-wide hover:bg-raksha-accentLight transition-all duration-300 transform hover:-translate-y-1 rounded">
+          <button 
+            onClick={onOpenMissionModal}
+            className="flex items-center gap-2 bg-raksha-accent text-raksha-900 px-8 py-4 text-sm font-semibold tracking-wide hover:bg-raksha-accentLight transition-all duration-300 transform hover:-translate-y-1 rounded cursor-pointer shadow-lg shadow-cyan-500/20"
+          >
             ENTER RAKSHA
             <ArrowRight className="w-4 h-4" />
           </button>
-          <button className="flex items-center gap-2 bg-black/20 backdrop-blur-sm border border-raksha-textMuted/30 text-white px-8 py-4 text-sm font-medium tracking-wide hover:bg-white/10 hover:border-raksha-accent/50 transition-all duration-300 transform hover:-translate-y-1 rounded">
+          <a 
+            href="#why"
+            className="flex items-center gap-2 bg-black/20 backdrop-blur-sm border border-raksha-textMuted/30 text-white px-8 py-4 text-sm font-medium tracking-wide hover:bg-white/10 hover:border-raksha-accent/50 transition-all duration-300 transform hover:-translate-y-1 rounded cursor-pointer"
+          >
             EXPLORE ARCHITECTURE
             <ChevronDown className="w-4 h-4" />
-          </button>
+          </a>
         </div>
       </div>
       

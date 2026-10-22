@@ -6,7 +6,11 @@ import { HeroVideo } from './HeroVideo';
 import { HeroNavigation } from './HeroNavigation';
 import { HeroContent } from './HeroContent';
 
-export const HeroSection: React.FC = () => {
+interface HeroSectionProps {
+  onOpenMissionModal?: () => void;
+}
+
+export const HeroSection: React.FC<HeroSectionProps> = ({ onOpenMissionModal }) => {
   const refs: HeroRefs = {
     container: useRef<HTMLDivElement | null>(null),
     video: useRef<HTMLVideoElement | null>(null),
@@ -35,7 +39,7 @@ export const HeroSection: React.FC = () => {
       ref={refs.container} 
       className="relative w-full min-h-screen font-sans overflow-hidden flex flex-col"
     >
-      <HeroNavigation />
+      <HeroNavigation onOpenMissionModal={onOpenMissionModal} />
       
       {/* Video Background - Merged into the right side */}
       <div className="absolute inset-0 lg:left-1/3 z-0 pointer-events-none overflow-hidden">
@@ -45,7 +49,7 @@ export const HeroSection: React.FC = () => {
       {/* Content - Constrained to left side */}
       <div className="relative z-10 flex-grow max-w-[1920px] mx-auto w-full px-6 sm:px-8 lg:px-12 flex items-center">
         <div className="w-full lg:w-1/2">
-          <HeroContent refs={refs} />
+          <HeroContent refs={refs} onOpenMissionModal={onOpenMissionModal} />
         </div>
       </div>
     </section>
