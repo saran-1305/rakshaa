@@ -1,15 +1,35 @@
 import React from 'react';
 import type { DisasterScenario } from '../../data/syntheticScenarios';
-import { ShieldCheck, ShieldAlert, CheckCircle2, XCircle, Users, Activity } from 'lucide-react';
+import { ShieldCheck, ShieldAlert, CheckCircle2, XCircle, Users, Activity, Radar } from 'lucide-react';
 
 interface RelocationEngineStudioProps {
   scenario: DisasterScenario;
+  relocationDecision?: any;
 }
 
-export const RelocationEngineStudio: React.FC<RelocationEngineStudioProps> = ({ scenario }) => {
-  const approvedSites = scenario.candidate_sanctuaries.filter((s) => s.status === 'APPROVED');
-  const totalApprovedCapacity = approvedSites.reduce((sum, s) => sum + s.sphere_capacity_persons, 0);
-  const coveragePercent = Math.min(100, Math.round((totalApprovedCapacity / scenario.displaced_population) * 100));
+export const RelocationEngineStudio: React.FC<RelocationEngineStudioProps> = ({ 
+  scenario,
+  relocationDecision 
+}) => {
+  const activeRadiusKm = relocationDecision?.final_search_radius_km ?? 15.0;
+  const approvedSites = scenario.candidate_sanctuaries.filter(
+    (s) => s.status === 'APPROVED' && s.distance_km <= activeRadiusKm
+  );
+  const totalApprovedCapacity = relocationDecision?.total_safe_capacity_discovered ?? 
+    approvedSites.reduce((sum, s) => sum + s.sphere_capacity_persons, 0);
+  const shortfall = relocationDecision?.capacity_shortfall ?? 
+    Math.max(0, scenario.displaced_population - totalApprovedCapacity);
+  const coveragePercent = relocationDecision?.coverage_pct ?? 
+    Math.min(100, Math.round((totalApprovedCapacity / Math.max(1, scenario.displaced_population)) * 100));
+
+  const stoppingStatus = relocationDecision?.completion_status || (
+    coveragePercent >= 100 ? 'SUFFICIENT_SAFE_CAPACITY_FOUND' : 'OPERATIONAL_EVALUATION_ACTIVE'
+  );
+  const statusExplanation = relocationDecision?.status_explanation || (
+    coveragePercent >= 100
+      ? `Sufficient safe capacity (${totalApprovedCapacity.toLocaleString()} persons) found within ${activeRadiusKm} km active search boundary.`
+      : `Search evaluated up to ${activeRadiusKm} km. Shortfall: ${shortfall.toLocaleString()} persons.`
+  );
 
   return (
     <div className="space-y-6">
@@ -46,9 +66,48 @@ export const RelocationEngineStudio: React.FC<RelocationEngineStudioProps> = ({ 
             {coveragePercent}%
           </div>
           <div className="text-[11px] text-cyan-200/80 mt-1">
-            {coveragePercent >= 100 ? '✓ ZERO-DEFICIT ACHIEVED' : '⚠️ CAPACITY GAP'}
+            {coveragePercent >= 100 ? '✓ ZERO-DEFICIT ACHIEVED' : `⚠️ DEFICIT: ${shortfall.toLocaleString()} PERSONS`}
           </div>
         </div>
+      </div>
+
+      {/* Progressive Search Expansion Telemetry Banner */}
+      <div className="p-4 rounded-xl bg-[#090E17] border border-cyan-500/30 space-y-2 font-mono text-xs shadow-lg">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-2">
+          <div className="flex items-center gap-2">
+            <Radar className="w-4 h-4 text-cyan-400 animate-spin" />
+            <span className="text-white font-bold text-xs uppercase tracking-wider">
+              Concentric Relocation Search Status:
+            </span>
+            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+              stoppingStatus === 'SUFFICIENT_SAFE_CAPACITY_FOUND'
+                ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-500/40'
+                : 'bg-amber-950/80 text-amber-300 border border-amber-500/40'
+            }`}>
+              {stoppingStatus}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-3 text-white/70 text-[11px]">
+            <span>Active Radius: <strong className="text-cyan-300">{activeRadiusKm} km</strong></span>
+            <span>•</span>
+            <span>Max Limit: <strong className="text-white/90">{relocationDecision?.max_operational_radius_km ?? 25} km</strong></span>
+          </div>
+        </div>
+
+        <p className="text-white/70 text-xs font-sans leading-relaxed">
+          {statusExplanation}
+        </p>
+
+        {shortfall > 0 && (
+          <div className="p-2.5 rounded bg-amber-950/40 border border-amber-500/40 text-amber-300 text-[11px] font-sans flex items-center gap-2">
+            <ShieldAlert className="w-4 h-4 text-amber-400 flex-shrink-0" />
+            <span>
+              <strong>PLAN INCOMPLETE:</strong> An evacuation capacity shortfall of{' '}
+              <strong>{shortfall.toLocaleString()} citizens</strong> remains. Additional safe relocation parcels or secondary operational corridors must be evaluated.
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Zero-Tolerance Hard Veto Audit Table */}
@@ -124,8 +183,12 @@ export const RelocationEngineStudio: React.FC<RelocationEngineStudioProps> = ({ 
                     <td className="py-3 text-raksha-accent font-bold">{site.mcda_score} / 100</td>
                     <td className="py-3 text-right">
                       {isApproved ? (
-                        <span className="px-2.5 py-1 rounded-full bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 text-[10px] font-bold">
-                          APPROVED
+                        <span className={`px-2.5 py-1 rounded-full border text-[10px] font-bold ${
+                          site.distance_km <= activeRadiusKm
+                            ? 'bg-emerald-950/80 border-emerald-500/40 text-emerald-300'
+                            : 'bg-white/5 border-white/20 text-white/50'
+                        }`}>
+                          {site.distance_km <= activeRadiusKm ? 'APPROVED' : 'OUT OF RADIUS'}
                         </span>
                       ) : (
                         <span className="px-2.5 py-1 rounded-full bg-red-950/80 border border-red-500/40 text-red-300 text-[10px] font-bold">
@@ -172,22 +235,38 @@ export const RelocationEngineStudio: React.FC<RelocationEngineStudioProps> = ({ 
         </div>
 
         <div className="p-5 rounded-xl bg-black/60 border border-white/10 space-y-3 font-mono text-xs">
-          <h4 className="text-sm font-semibold text-white font-sans flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-            Approved Master Plan Sites
-          </h4>
+          <div className="flex items-center justify-between">
+            <h4 className="text-sm font-semibold text-white font-sans flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+              Approved Master Plan Sites
+            </h4>
+            <span className="text-[11px] text-white/50">Active Radius: {activeRadiusKm} km</span>
+          </div>
+
           <div className="space-y-3 pt-1">
-            {approvedSites.map((site, index) => (
-              <div key={site.id} className="p-3 rounded-lg bg-white/5 border border-white/10">
-                <div className="flex items-center justify-between">
-                  <span className="font-sans font-bold text-white text-xs">#{index + 1} {site.name}</span>
-                  <span className="text-emerald-400 font-bold">{site.allocated_population} Evacuees</span>
-                </div>
-                <div className="text-[11px] text-white/60 mt-1">
-                  Water: {site.infrastructure.water_tanks} Tanks • Power: {site.infrastructure.power_backup} • Medical: {site.infrastructure.medical_distance_km} km
-                </div>
+            {approvedSites.length === 0 ? (
+              <div className="p-4 rounded-lg bg-white/5 border border-white/10 text-center text-white/50 text-xs">
+                No approved sites found within active search radius.
               </div>
-            ))}
+            ) : (
+              approvedSites.map((site, index) => (
+                <div key={site.id} className="p-3 rounded-lg bg-white/5 border border-white/10">
+                  <div className="flex items-center justify-between">
+                    <span className="font-sans font-bold text-white text-xs">#{index + 1} {site.name}</span>
+                    <span className="text-emerald-400 font-bold">{site.allocated_population} Evacuees</span>
+                  </div>
+                  <div className="text-[11px] text-white/60 mt-1">
+                    Water: {site.infrastructure.water_tanks} Tanks • Power: {site.infrastructure.power_backup} • Medical: {site.infrastructure.medical_distance_km} km
+                  </div>
+                </div>
+              ))
+            )}
+
+            {shortfall > 0 && (
+              <div className="p-2.5 rounded bg-red-950/60 border border-red-500/40 text-red-300 text-[11px] font-sans">
+                ⚠️ <strong>Unallocated Population:</strong> {shortfall.toLocaleString()} persons exceed approved capacity within {activeRadiusKm} km.
+              </div>
+            )}
           </div>
         </div>
       </div>

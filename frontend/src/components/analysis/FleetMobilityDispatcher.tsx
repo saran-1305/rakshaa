@@ -38,19 +38,24 @@ export const FleetMobilityDispatcher: React.FC<FleetMobilityDispatcherProps> = (
     setIsQuerying(true);
     debounceTimerRef.current = setTimeout(async () => {
       try {
-        const approvedSites = scenario.candidate_sanctuaries.filter((s) => s.status === 'APPROVED');
-        const totalApprovedCapacity = approvedSites.reduce((sum, s) => sum + s.sphere_capacity_persons, 0) || 1;
+        const approvedSites = scenario.candidate_sanctuaries.filter(
+          (s) => s.status === 'APPROVED' && (s.in_active_radius !== false)
+        );
+        const sitesWithAlloc = approvedSites.filter((s) => s.allocated_population > 0);
+        const activeSites = sitesWithAlloc.length > 0 ? sitesWithAlloc : approvedSites;
+        const totalApprovedCapacity = activeSites.reduce((sum, s) => sum + (s.allocated_population || s.sphere_capacity_persons), 0) || 1;
 
         let allocatedTotal = 0;
-        const allocations = approvedSites.map((site, index) => {
-          const isLast = index === approvedSites.length - 1;
-          const proportion = site.sphere_capacity_persons / totalApprovedCapacity;
-          const allocated = isLast ? Math.max(0, population - allocatedTotal) : Math.round(population * proportion);
-          allocatedTotal += allocated;
+        const allocations = activeSites.map((site, index) => {
+          const isLast = index === activeSites.length - 1;
+          const assigned = site.allocated_population > 0 
+            ? site.allocated_population 
+            : (isLast ? Math.max(0, population - allocatedTotal) : Math.round(population * (site.sphere_capacity_persons / totalApprovedCapacity)));
+          allocatedTotal += assigned;
           return {
             site_id: site.id,
             site_name: site.name,
-            allocated_population: allocated,
+            allocated_population: assigned,
             distance_km: site.distance_km,
             capacity: site.sphere_capacity_persons
           };

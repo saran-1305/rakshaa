@@ -14,6 +14,15 @@ import math
 from typing import Dict, Any, List, Tuple, Optional
 from satellite_service import SatelliteTelemetryService
 
+def haversine_distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Calculates great-circle geodesic distance in kilometers between two coordinates."""
+    R = 6371.0  # Earth mean radius in km
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = math.sin(dlat / 2.0)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2.0)**2
+    c = 2.0 * math.atan2(math.sqrt(a), math.sqrt(1.0 - a))
+    return round(R * c, 2)
+
 class RelocationEngine:
     def __init__(self, satellite_service: SatelliteTelemetryService):
         self.sat_service = satellite_service
@@ -264,6 +273,7 @@ class RelocationEngine:
             "methodology": "Multi-Site Usable Capacity Allocation",
             "displaced_population_total": displaced_population,
             "total_allocated": total_allocated,
+            "unallocated_population": max(0, displaced_population - total_allocated),
             "coverage_pct": coverage_pct,
             "is_fully_covered": is_fully_covered,
             "deficit": max(0, displaced_population - total_allocated),
@@ -410,15 +420,36 @@ class RelocationEngine:
         hazard_level: str,
         hazard_index: float = 0.65,
         flow_bearing_deg: float = 135.0,
-        hazard_type: Optional[str] = None
+        hazard_type: Optional[str] = None,
+        initial_radius_km: float = 5.0,
+        step_km: float = 5.0,
+        max_radius_km: float = 25.0
     ) -> Dict[str, Any]:
         """
-        Discovers real OpenStreetMap facilities, groups them into 5 km rings,
-        evaluates SRTM elevations/slopes against hazard-specific safety criteria,
-        and ranks qualified potential relocation sites.
+        Progressive concentric relocation search:
+        Expands in increments (e.g. 0-5 km, 5-10 km, 10-15 km, 15-20 km, 20-25 km)
+        until sufficient safe capacity is found or an explicit operational stopping condition is met.
+        Uses exact geodetic distance calculations as the backend source of truth.
         """
+        initial_radius_km = float(initial_radius_km)
+        step_km = float(step_km)
+        max_radius_km = float(max_radius_km)
+        displaced_population = int(displaced_population)
+
         # 1. Discover real-world facilities via OSM Overpass or verified regional database
-        raw_facilities = self.sat_service.fetch_real_osm_facilities(centroid_lat, centroid_lon, radius_m=16000)
+        query_radius_m = max(int(max_radius_km * 1000), 25000)
+        raw_facilities = self.sat_service.fetch_real_osm_facilities(centroid_lat, centroid_lon, radius_m=query_radius_m)
+
+        # Deduplicate candidates by ID to protect against double-counting
+        unique_facilities = []
+        seen_ids = set()
+        for fac in (raw_facilities or []):
+            fid = fac.get("id")
+            if fid and fid in seen_ids:
+                continue
+            if fid:
+                seen_ids.add(fid)
+            unique_facilities.append(fac)
 
         # Detect hazard regime
         is_landslide = (hazard_type and "landslide" in hazard_type.lower()) or (abs(centroid_lat - 11.5126) < 0.25)
@@ -429,8 +460,8 @@ class RelocationEngine:
         origin_elev_res = self.sat_service.fetch_elevations_batch([{"lat": centroid_lat, "lon": centroid_lon}])
         origin_elevation = origin_elev_res[0] if origin_elev_res else 700.0
 
-        # If no mapped facilities found, return honest result (no fake synthetic generation)
-        if not raw_facilities:
+        # If no mapped facilities found, return honest provider failure result
+        if not unique_facilities:
             hazard_grid = self.compute_spatial_hazard_grid(
                 centroid_lat=centroid_lat,
                 centroid_lon=centroid_lon,
@@ -438,18 +469,32 @@ class RelocationEngine:
                 flow_bearing_deg=flow_bearing_deg
             )
             return {
-                "status": "NO_QUALIFIED_SITES_FOUND",
-                "message": "No qualified relocation sites identified within 15 km search radius. Expand search radius or deploy temporary shelter units.",
-                "rings_searched_count": 3,
+                "status": "PROVIDER_FAILURE",
+                "completion_status": "PROVIDER_FAILURE",
+                "status_explanation": f"No candidate facilities available from data providers within {max_radius_km:.0f} km search horizon.",
+                "initial_radius_km": initial_radius_km,
+                "final_search_radius_km": initial_radius_km,
+                "search_increment_km": step_km,
+                "max_operational_radius_km": max_radius_km,
+                "rings_searched_count": 0,
+                "rings_evaluated_count": 0,
                 "displaced_population_target": displaced_population,
+                "required_population_capacity": displaced_population,
                 "total_safe_capacity_discovered": 0,
+                "total_usable_capacity_discovered": 0,
+                "approved_capacity": 0,
                 "capacity_fulfilled": False,
+                "is_fully_covered": False,
+                "capacity_shortfall": displaced_population,
+                "remaining_capacity_shortfall": displaced_population,
+                "coverage_pct": 0.0,
                 "origin_elevation_m": round(origin_elevation, 1),
-                "search_steps": [
-                    {"radius": 5, "ring": 1, "label": "Ring 1 (0 - 5 km)", "status": "INSUFFICIENT", "candidates": 0, "safe_capacity": 0},
-                    {"radius": 10, "ring": 2, "label": "Ring 2 (5 - 10 km)", "status": "INSUFFICIENT", "candidates": 0, "safe_capacity": 0},
-                    {"radius": 15, "ring": 3, "label": "Ring 3 (10 - 15 km)", "status": "INSUFFICIENT", "candidates": 0, "safe_capacity": 0}
-                ],
+                "rings_evaluated": [],
+                "search_steps": [],
+                "candidate_count_per_ring": {},
+                "newly_discovered_candidates_per_ring": {},
+                "rejected_candidate_count": 0,
+                "veto_reasons_summary": {},
                 "ranked_safe_sites": [],
                 "vetoed_sites": [],
                 "all_evaluated_candidates": [],
@@ -457,9 +502,11 @@ class RelocationEngine:
                 "multi_site_allocation": {
                     "displaced_population_total": displaced_population,
                     "total_allocated": 0,
+                    "unallocated_population": displaced_population,
                     "coverage_pct": 0.0,
                     "is_fully_covered": False,
-                    "allocation_formula": "No candidate facilities in search radius",
+                    "deficit": displaced_population,
+                    "allocation_formula": "No candidate facilities in search area",
                     "allocations": []
                 },
                 "data_provenance": {
@@ -471,10 +518,8 @@ class RelocationEngine:
 
         # 3. Prepare coordinates for batch elevation querying
         m_per_deg_lat = 111139.0
-        m_per_deg_lon = 111139.0 * math.cos(math.radians(centroid_lat))
-
         points_to_sample = []
-        for fac in raw_facilities:
+        for fac in unique_facilities:
             p_lat, p_lon = fac["lat"], fac["lon"]
             points_to_sample.append({"lat": p_lat, "lon": p_lon})
             # Add small 150m offset point to compute real local terrain slope
@@ -485,31 +530,27 @@ class RelocationEngine:
         all_candidates = []
         pt_idx = 0
 
-        for fac in raw_facilities:
+        for fac in unique_facilities:
             p_lat, p_lon = fac["lat"], fac["lon"]
             elev_main = float(fac["elevation_m"]) if fac.get("elevation_m") is not None else (dem_elevations[pt_idx] if pt_idx < len(dem_elevations) else 700.0)
             elev_offset = dem_elevations[pt_idx + 1] if (pt_idx + 1) < len(dem_elevations) else (elev_main + 4.0)
             pt_idx += 2
 
-            # Geodesic distance
-            d_lat_m = (p_lat - centroid_lat) * m_per_deg_lat
-            d_lon_m = (p_lon - centroid_lon) * m_per_deg_lon
-            dist_km = round(math.hypot(d_lat_m, d_lon_m) / 1000.0, 2)
+            # Exact Geodesic Haversine Distance
+            dist_km = haversine_distance_km(centroid_lat, centroid_lon, p_lat, p_lon)
 
-            # Assign ring
-            if dist_km <= 5.0:
-                ring_idx = 1
-                ring_label = "Immediate Zone (0 - 5 km)"
-            elif dist_km <= 10.0:
-                ring_idx = 2
-                ring_label = "Secondary Buffer (5 - 10 km)"
+            # Assign ring index based on step_km
+            ring_idx = max(1, int(math.ceil(dist_km / step_km))) if dist_km > 0 else 1
+            ring_min_km = (ring_idx - 1) * step_km
+            ring_max_km = ring_idx * step_km
+            ring_label = f"Ring {ring_idx} ({ring_min_km:.0f} - {ring_max_km:.0f} km)"
+
+            # Real ground slope from facility telemetry or DEM offset
+            if fac.get("slope_deg") is not None:
+                slope_deg = float(fac["slope_deg"])
             else:
-                ring_idx = 3
-                ring_label = "Regional Horizon (10 - 15 km)"
-
-            # Real ground slope from DEM offset
-            delta_z = abs(elev_offset - elev_main)
-            slope_deg = round(math.degrees(math.atan2(delta_z, 150.0)), 1)
+                delta_z = abs(elev_offset - elev_main)
+                slope_deg = round(math.degrees(math.atan2(delta_z, 150.0)), 1)
 
             # Hazard-Specific Hard Veto Safety Evaluation
             if is_flood:
@@ -530,7 +571,7 @@ class RelocationEngine:
                 is_slope_safe = slope_deg <= 14.0
                 is_flood_safe = (elev_main >= origin_elevation - 20.0) or (dist_km > 3.0)
 
-            is_distance_viable = dist_km <= 16.0
+            is_distance_viable = dist_km <= max_radius_km
             force_veto = fac.get("force_veto", False)
 
             passed_hard_veto = is_slope_safe and is_flood_safe and is_distance_viable and not force_veto
@@ -557,7 +598,7 @@ class RelocationEngine:
                     else:
                         veto_reasons.append(f"Elevation {elev_main}m below flood drainage line")
                 if not is_distance_viable:
-                    veto_reasons.append(f"Distance {dist_km} km exceeds 15 km emergency radius")
+                    veto_reasons.append(f"Distance {dist_km} km exceeds operational search maximum ({max_radius_km:.0f} km)")
 
             # Capacity estimation (Sphere site planning area: 45 m2/person @ 60% usable assumption)
             gross_area = fac["gross_area_sqm"]
@@ -580,7 +621,7 @@ class RelocationEngine:
                 f_cap = round(25.0 * cap_ratio, 1)
 
                 # 3. Accessibility Factor (Max 15)
-                f_access = round(max(6.0, 15.0 - (dist_km / 16.0) * 8.0), 1)
+                f_access = round(max(6.0, 15.0 - (dist_km / max(1.0, max_radius_km)) * 8.0), 1)
 
                 # 4. Infrastructure Factor (Max 15)
                 f_infra = 15.0 if ("College" in fac["type"] or "Campus" in fac["type"] or "University" in fac["type"]) else 13.0
@@ -620,20 +661,25 @@ class RelocationEngine:
                 "is_real_osm": fac.get("is_real_osm", True),
                 "ring": ring_idx,
                 "ring_label": ring_label,
+                "lat": round(p_lat, 5),
+                "lon": round(p_lon, 5),
                 "coordinates": {"lat": round(p_lat, 5), "lon": round(p_lon, 5), "lng": round(p_lon, 5)},
                 "distance_km": dist_km,
                 "distanceFromOrigin": dist_km,
                 "elevation_m": round(elev_main, 1),
                 "elevation_delta_m": round(elev_main - origin_elevation, 1),
                 "slope_deg": slope_deg,
+                "slope_degrees": slope_deg,
                 "gross_area_sqm": gross_area,
+                "sphere_capacity": shelter_capacity,
                 "shelter_capacity_persons": shelter_capacity,
                 "estimated_usable_capacity": shelter_capacity,
                 "estimated_usable_area_sqm": int(usable_area) if passed_hard_veto else 0,
+                "allocated_population": 0,
                 "passed_hard_veto": passed_hard_veto,
                 "veto_reasons": veto_reasons,
                 "utility_score": utility_score,
-                "status": "candidate" if passed_hard_veto else "rejected",
+                "status": "candidate" if passed_hard_veto else "HARD_VETO",
                 "safety": {
                     "status": "eligible" if passed_hard_veto else "rejected",
                     "hazardExposure": "LOW" if (passed_hard_veto and dist_km >= 3.0) else ("MODERATE" if passed_hard_veto else "HIGH"),
@@ -678,12 +724,112 @@ class RelocationEngine:
             }
             all_candidates.append(candidate_obj)
 
-        # Filter and rank safe survivors
-        safe_candidates = [c for c in all_candidates if c["passed_hard_veto"]]
-        safe_candidates.sort(key=lambda x: x["suitability"]["score"], reverse=True)
-        vetoed_candidates = [c for c in all_candidates if not c["passed_hard_veto"]]
+        # 4. Progressive Concentric Ring Expansion Search
+        max_rings = max(1, int(math.ceil(max_radius_km / step_km)))
+        cumulative_safe_cap = 0
+        rings_evaluated = []
+        search_steps = []
+        candidate_count_per_ring = {}
+        newly_discovered_candidates_per_ring = {}
+        veto_reasons_summary = {}
+        final_search_radius_km = initial_radius_km
+        completion_status = "IN_PROGRESS"
+        status_explanation = ""
 
-        # Assign ranks
+        for r_num in range(1, max_rings + 1):
+            r_max = round(r_num * step_km, 1)
+            r_min = round((r_num - 1) * step_km, 1)
+            ring_key = f"ring_{r_num}"
+
+            candidates_in_ring = [
+                c for c in all_candidates
+                if (r_min < c["distance_km"] <= r_max) or (r_num == 1 and c["distance_km"] <= r_min)
+            ]
+            candidate_count_per_ring[ring_key] = len(candidates_in_ring)
+            newly_discovered_candidates_per_ring[ring_key] = len(candidates_in_ring)
+
+            newly_approved = [c for c in candidates_in_ring if c["passed_hard_veto"]]
+            newly_vetoed = [c for c in candidates_in_ring if not c["passed_hard_veto"]]
+
+            for c in newly_vetoed:
+                for r in c.get("veto_reasons", []):
+                    veto_reasons_summary[r] = veto_reasons_summary.get(r, 0) + 1
+
+            ring_cap = sum(c["shelter_capacity_persons"] for c in newly_approved)
+            cumulative_safe_cap += ring_cap
+            remaining_shortfall = max(0, displaced_population - cumulative_safe_cap)
+            is_sufficient = cumulative_safe_cap >= displaced_population
+
+            step_obj = {
+                "radius": r_max,
+                "radius_km": r_max,
+                "ring": r_num,
+                "label": f"Ring {r_num} ({r_min:.0f} - {r_max:.0f} km)",
+                "ring_label": f"Ring {r_num} ({r_min:.0f} - {r_max:.0f} km)",
+                "status": "SUFFICIENT" if is_sufficient else "INSUFFICIENT",
+                "candidates": len(candidates_in_ring),
+                "candidates_count": len(candidates_in_ring),
+                "newly_approved_count": len(newly_approved),
+                "newly_vetoed_count": len(newly_vetoed),
+                "safe_capacity": ring_cap,
+                "usable_capacity": ring_cap,
+                "cumulative_safe_capacity": cumulative_safe_cap,
+                "remaining_shortfall": remaining_shortfall
+            }
+            rings_evaluated.append(step_obj)
+            search_steps.append(step_obj)
+            final_search_radius_km = r_max
+
+            if is_sufficient:
+                completion_status = "SUFFICIENT_SAFE_CAPACITY_FOUND"
+                status_explanation = (
+                    f"Sufficient safe capacity ({cumulative_safe_cap:,} persons) found within Ring {r_num} "
+                    f"({r_max:.0f} km) to accommodate displaced population ({displaced_population:,} persons)."
+                )
+                break
+            elif r_max >= max_radius_km:
+                completion_status = "OPERATIONAL_LIMIT_REACHED"
+                status_explanation = (
+                    f"Operational maximum search radius ({max_radius_km:.0f} km) reached. "
+                    f"Approved safe capacity is {cumulative_safe_cap:,} of {displaced_population:,} persons (shortfall: {remaining_shortfall:,} persons)."
+                )
+                break
+            else:
+                remaining_candidates = [c for c in all_candidates if c["distance_km"] > r_max]
+                if not remaining_candidates:
+                    completion_status = "DATA_SOURCE_EXHAUSTED"
+                    status_explanation = (
+                        f"Search expanded to {r_max:.0f} km. The geospatial data provider has no additional candidate facilities "
+                        f"in outer zones. Remaining capacity shortfall: {remaining_shortfall:,} persons."
+                    )
+                    break
+
+        # Mark in-radius status on all candidates
+        for site in all_candidates:
+            site["in_active_radius"] = site["distance_km"] <= final_search_radius_km
+            if not site["passed_hard_veto"]:
+                site["status"] = "HARD_VETO"
+                site["suitability"]["label"] = "HARD_VETO"
+            elif not site["in_active_radius"]:
+                site["status"] = "out_of_radius"
+                site["suitability"]["label"] = "OUT_OF_RADIUS"
+            else:
+                site["status"] = "APPROVED"
+                site["suitability"]["label"] = "APPROVED"
+
+        # Safe candidates evaluated within the final search radius
+        safe_candidates = [
+            c for c in all_candidates 
+            if c["passed_hard_veto"] and c["distance_km"] <= final_search_radius_km
+        ]
+        safe_candidates.sort(key=lambda x: x["suitability"]["score"], reverse=True)
+
+        vetoed_candidates = [
+            c for c in all_candidates 
+            if (not c["passed_hard_veto"]) and c["distance_km"] <= final_search_radius_km
+        ]
+
+        # Assign ranks to approved survivors
         for idx, site in enumerate(safe_candidates):
             site["rank"] = idx + 1
             if idx == 0:
@@ -696,31 +842,16 @@ class RelocationEngine:
                 site["recommendation"] = "RESERVE"
                 site["suitability"]["label"] = "ALTERNATIVE"
 
+        # Multi-Site Population Allocation (Only among approved sites in evaluated search area)
+        multi_site_allocation = self.compute_multi_site_allocation(
+            safe_candidates=safe_candidates,
+            displaced_population=displaced_population
+        )
+
+        # Synchronize allocated_population back to all_candidates
+        alloc_map = {a["site_id"]: a["allocated_population"] for a in multi_site_allocation.get("allocations", [])}
         for site in all_candidates:
-            if not site["passed_hard_veto"]:
-                site["suitability"]["label"] = "REJECTED"
-
-        # Check search sufficiency
-        search_exhausted_ring = max([c["ring"] for c in all_candidates]) if all_candidates else 1
-        cumulative_capacity = sum(c["shelter_capacity_persons"] for c in safe_candidates)
-
-        search_steps = []
-        for r_idx in range(1, 4):
-            r_km = r_idx * 5
-            r_sites = [c for c in safe_candidates if c["ring"] <= r_idx]
-            r_cap = sum(c["shelter_capacity_persons"] for c in r_sites)
-            is_sufficient = r_cap >= displaced_population
-            search_steps.append({
-                "radius": r_km,
-                "ring": r_idx,
-                "label": f"Ring {r_idx} ({'0 - 5 km' if r_idx == 1 else ('5 - 10 km' if r_idx == 2 else '10 - 15 km')})",
-                "status": "SUFFICIENT" if is_sufficient else "INSUFFICIENT",
-                "candidates": len(r_sites),
-                "safe_capacity": r_cap,
-                "usable_capacity": r_cap
-            })
-            if is_sufficient:
-                break
+            site["allocated_population"] = alloc_map.get(site["id"], 0)
 
         # 5x5 Spatial Hazard Grid Raster Computation
         hazard_grid = self.compute_spatial_hazard_grid(
@@ -728,12 +859,6 @@ class RelocationEngine:
             centroid_lon=centroid_lon,
             hazard_index=hazard_index,
             flow_bearing_deg=flow_bearing_deg
-        )
-
-        # Multi-Site Population Allocation (Usable Capacity Distribution)
-        multi_site_allocation = self.compute_multi_site_allocation(
-            safe_candidates=safe_candidates,
-            displaced_population=displaced_population
         )
 
         # Continuous SRTM DEM Elevation Transect & Fleet Logistics for Top Candidate
@@ -772,14 +897,37 @@ class RelocationEngine:
             overall_mode = "LIVE"
             mode_badge_color = "emerald"
 
+        total_safe_cap = sum(c["shelter_capacity_persons"] for c in safe_candidates)
+        capacity_shortfall = max(0, displaced_population - total_safe_cap)
+        coverage_pct = round(min(100.0, (total_safe_cap / max(1, displaced_population)) * 100.0), 1)
+        capacity_fulfilled = total_safe_cap >= displaced_population
+
         return {
-            "rings_searched_count": search_exhausted_ring,
-            "displaced_population_target": displaced_population,
-            "total_safe_capacity_discovered": cumulative_capacity,
-            "total_usable_capacity_discovered": cumulative_capacity,
-            "capacity_fulfilled": cumulative_capacity >= displaced_population,
-            "origin_elevation_m": round(origin_elevation, 1),
+            "initial_radius_km": initial_radius_km,
+            "final_search_radius_km": final_search_radius_km,
+            "search_increment_km": step_km,
+            "max_operational_radius_km": max_radius_km,
+            "rings_searched_count": len(rings_evaluated),
+            "rings_evaluated_count": len(rings_evaluated),
+            "rings_evaluated": rings_evaluated,
             "search_steps": search_steps,
+            "candidate_count_per_ring": candidate_count_per_ring,
+            "newly_discovered_candidates_per_ring": newly_discovered_candidates_per_ring,
+            "displaced_population_target": displaced_population,
+            "required_population_capacity": displaced_population,
+            "total_safe_capacity_discovered": total_safe_cap,
+            "total_usable_capacity_discovered": total_safe_cap,
+            "approved_capacity": total_safe_cap,
+            "capacity_fulfilled": capacity_fulfilled,
+            "is_fully_covered": capacity_fulfilled,
+            "capacity_shortfall": capacity_shortfall,
+            "remaining_capacity_shortfall": capacity_shortfall,
+            "coverage_pct": coverage_pct,
+            "completion_status": completion_status,
+            "status_explanation": status_explanation,
+            "rejected_candidate_count": len(vetoed_candidates),
+            "veto_reasons_summary": veto_reasons_summary,
+            "origin_elevation_m": round(origin_elevation, 1),
             "ranked_safe_sites": safe_candidates,
             "vetoed_sites": vetoed_candidates,
             "all_evaluated_candidates": all_candidates,

@@ -94,6 +94,9 @@ class AnalysisRequest(BaseModel):
     lon: float = Field(..., ge=-180.0, le=180.0, description="Longitude [-180.0 to 180.0]")
     displaced_population: int = Field(default=3500, ge=50, le=500000, description="Scenario Displaced Population [50 - 500,000]")
     hazard_type: Optional[str] = Field(default="Multi-Hazard Crisis", max_length=100)
+    initial_radius_km: Optional[float] = Field(default=5.0, ge=1.0, le=50.0, description="Initial search radius (km)")
+    step_km: Optional[float] = Field(default=5.0, ge=1.0, le=25.0, description="Progressive ring expansion increment (km)")
+    max_radius_km: Optional[float] = Field(default=25.0, ge=5.0, le=100.0, description="Operational maximum search radius (km)")
 
 @app.get("/api/health")
 def health_check():
@@ -245,7 +248,7 @@ def run_analysis(req: AnalysisRequest):
             census_scenario_pop=req.displaced_population
         )
 
-        # 5. Progressive 5 km Ring Evaluation & Multi-Criteria Ranking
+        # 5. Progressive Concentric Ring Evaluation & Multi-Criteria Ranking
         relocation_results = engine.evaluate_relocation_rings(
             centroid_lat=req.lat,
             centroid_lon=req.lon,
@@ -253,7 +256,10 @@ def run_analysis(req: AnalysisRequest):
             hazard_level=hazard_level,
             hazard_index=hazard_index,
             flow_bearing_deg=aoi_data.get("flow_bearing_deg", 135.0),
-            hazard_type=req.hazard_type
+            hazard_type=req.hazard_type,
+            initial_radius_km=req.initial_radius_km or 5.0,
+            step_km=req.step_km or 5.0,
+            max_radius_km=req.max_radius_km or 25.0
         )
 
         # 6. Cartosat-3 Sub-Meter High-Resolution Validation for Top Recommended Site

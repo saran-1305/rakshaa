@@ -68,6 +68,25 @@ export interface BackendAnalysisRequest {
   lon: number;
   displaced_population: number;
   hazard_type?: string;
+  initial_radius_km?: number;
+  step_km?: number;
+  max_radius_km?: number;
+}
+
+export interface ProgressiveRingStep {
+  radius: number;
+  radius_km: number;
+  ring: number;
+  label: string;
+  status: 'SUFFICIENT' | 'INSUFFICIENT' | string;
+  candidates: number;
+  candidates_count: number;
+  newly_approved_count: number;
+  newly_vetoed_count: number;
+  safe_capacity: number;
+  usable_capacity: number;
+  cumulative_safe_capacity: number;
+  remaining_shortfall: number;
 }
 
 export interface BackendAnalysisResponse {
@@ -109,13 +128,34 @@ export interface BackendAnalysisResponse {
   };
   relocation_decision: {
     status?: string;
+    initial_radius_km?: number;
+    final_search_radius_km?: number;
+    search_increment_km?: number;
+    max_operational_radius_km?: number;
+    rings_searched_count?: number;
+    rings_evaluated_count?: number;
+    rings_evaluated?: ProgressiveRingStep[];
+    search_steps?: ProgressiveRingStep[];
     displaced_population_target?: number;
+    required_population_capacity?: number;
     total_safe_capacity_discovered?: number;
+    total_usable_capacity_discovered?: number;
+    approved_capacity?: number;
+    capacity_fulfilled?: boolean;
+    capacity_shortfall?: number;
+    remaining_capacity_shortfall?: number;
+    coverage_pct?: number;
+    completion_status?: 'SUFFICIENT_SAFE_CAPACITY_FOUND' | 'OPERATIONAL_LIMIT_REACHED' | 'DATA_SOURCE_EXHAUSTED' | 'PROVIDER_FAILURE' | string;
+    status_explanation?: string;
+    candidate_count_per_ring?: Record<string, number>;
+    newly_discovered_candidates_per_ring?: Record<string, number>;
+    rejected_candidate_count?: number;
+    veto_reasons_summary?: Record<string, number>;
+    origin_elevation_m?: number;
     ranked_safe_sites?: any[];
     vetoed_sites?: any[];
     all_evaluated_candidates?: any[];
     multi_site_allocation?: any;
-    search_steps?: any[];
     [key: string]: any;
   };
 }

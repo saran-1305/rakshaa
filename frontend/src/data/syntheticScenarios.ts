@@ -1,7 +1,7 @@
 export interface CandidateSanctuary {
   id: string;
   name: string;
-  ring: '0-5 km' | '5-10 km' | '10-15 km';
+  ring: '0-5 km' | '5-10 km' | '10-15 km' | '15-20 km' | '20-25 km' | string;
   lat: number;
   lon: number;
   distance_km: number;
@@ -10,7 +10,8 @@ export interface CandidateSanctuary {
   sphere_capacity_persons: number;
   allocated_population: number;
   slope_deg: number;
-  status: 'APPROVED' | 'HARD_VETO';
+  status: 'APPROVED' | 'HARD_VETO' | string;
+  in_active_radius?: boolean;
   veto_reasons?: string[];
   mcda_score: number;
   infrastructure: {
@@ -172,44 +173,12 @@ export const SYNTHETIC_SCENARIOS: Record<string, DisasterScenario> = {
     },
     candidate_sanctuaries: [
       {
-        id: 'dev-site-1',
-        name: 'Pipalkoti Institutional Complex & Stadium',
-        ring: '0-5 km',
-        lat: 30.4285,
-        lon: 79.4312,
-        distance_km: 5.31,
-        gross_area_sqm: 32000,
-        usable_area_sqm: 19200,
-        sphere_capacity_persons: 426,
-        allocated_population: 420,
-        slope_deg: 3.8,
-        status: 'APPROVED',
-        mcda_score: 94.6,
-        infrastructure: { water_tanks: 12, power_backup: '125 kVA Hybrid Solar-DG', medical_distance_km: 1.2, helipad: true }
-      },
-      {
-        id: 'dev-site-2',
-        name: 'Helang Community Campus & Higher Secondary School',
-        ring: '5-10 km',
-        lat: 30.5284,
-        lon: 79.5101,
-        distance_km: 7.82,
-        gross_area_sqm: 24000,
-        usable_area_sqm: 14400,
-        sphere_capacity_persons: 320,
-        allocated_population: 300,
-        slope_deg: 5.1,
-        status: 'APPROVED',
-        mcda_score: 89.2,
-        infrastructure: { water_tanks: 8, power_backup: '65 kVA DG', medical_distance_km: 2.4, helipad: true }
-      },
-      {
         id: 'dev-site-veto',
         name: 'Urgam Floodplain Terraces (Proposed Camp Beta)',
         ring: '0-5 km',
         lat: 30.3340,
         lon: 79.2290,
-        distance_km: 2.10,
+        distance_km: 1.91,
         gross_area_sqm: 18000,
         usable_area_sqm: 10800,
         sphere_capacity_persons: 240,
@@ -219,6 +188,118 @@ export const SYNTHETIC_SCENARIOS: Record<string, DisasterScenario> = {
         veto_reasons: ['Debris flow runout path (< 180m)', 'Slope gradient 19.5° exceeds 14° safe ceiling', 'SAR Backscatter Specular Alert'],
         mcda_score: 18.2,
         infrastructure: { water_tanks: 0, power_backup: 'None', medical_distance_km: 7.5, helipad: false }
+      },
+      {
+        id: 'dev-site-r1',
+        name: 'Urgam Upper Ridge Forest Rest Post',
+        ring: '0-5 km',
+        lat: 30.3420,
+        lon: 79.2410,
+        distance_km: 3.35,
+        gross_area_sqm: 18000,
+        usable_area_sqm: 10800,
+        sphere_capacity_persons: 240,
+        allocated_population: 240,
+        slope_deg: 8.2,
+        status: 'APPROVED',
+        mcda_score: 86.4,
+        infrastructure: { water_tanks: 6, power_backup: '40 kVA Solar-DG', medical_distance_km: 3.2, helipad: false }
+      },
+      {
+        id: 'dev-site-1',
+        name: 'Pipalkoti Institutional Complex & Relief Grounds',
+        ring: '5-10 km',
+        lat: 30.3540,
+        lon: 79.2560,
+        distance_km: 5.27,
+        gross_area_sqm: 36000,
+        usable_area_sqm: 21600,
+        sphere_capacity_persons: 480,
+        allocated_population: 480,
+        slope_deg: 3.8,
+        status: 'APPROVED',
+        mcda_score: 94.6,
+        infrastructure: { water_tanks: 12, power_backup: '125 kVA Hybrid Solar-DG', medical_distance_km: 1.2, helipad: true }
+      },
+      {
+        id: 'dev-site-2',
+        name: 'Helang Community Campus & Higher Secondary School',
+        ring: '5-10 km',
+        lat: 30.3680,
+        lon: 79.2780,
+        distance_km: 7.87,
+        gross_area_sqm: 24000,
+        usable_area_sqm: 14400,
+        sphere_capacity_persons: 320,
+        allocated_population: 0,
+        slope_deg: 5.1,
+        status: 'APPROVED',
+        mcda_score: 89.2,
+        infrastructure: { water_tanks: 8, power_backup: '65 kVA DG', medical_distance_km: 2.4, helipad: true }
+      },
+      {
+        id: 'dev-site-3',
+        name: 'Government Inter College (GIC) Joshimath Corridor Ground',
+        ring: '10-15 km',
+        lat: 30.3850,
+        lon: 79.2990,
+        distance_km: 10.61,
+        gross_area_sqm: 18750,
+        usable_area_sqm: 11250,
+        sphere_capacity_persons: 250,
+        allocated_population: 0,
+        slope_deg: 6.2,
+        status: 'APPROVED',
+        mcda_score: 82.5,
+        infrastructure: { water_tanks: 6, power_backup: '50 kVA DG', medical_distance_km: 4.5, helipad: false }
+      },
+      {
+        id: 'dev-site-4',
+        name: 'Agriculture & Horticulture Research Station, Marwari',
+        ring: '10-15 km',
+        lat: 30.4010,
+        lon: 79.3150,
+        distance_km: 12.92,
+        gross_area_sqm: 22500,
+        usable_area_sqm: 13500,
+        sphere_capacity_persons: 300,
+        allocated_population: 0,
+        slope_deg: 7.1,
+        status: 'APPROVED',
+        mcda_score: 79.8,
+        infrastructure: { water_tanks: 8, power_backup: '65 kVA DG', medical_distance_km: 5.8, helipad: true }
+      },
+      {
+        id: 'dev-site-6',
+        name: 'Joshimath Cantonment Highland Relief Grounds',
+        ring: '15-20 km',
+        lat: 30.4350,
+        lon: 79.3450,
+        distance_km: 17.51,
+        gross_area_sqm: 37500,
+        usable_area_sqm: 22500,
+        sphere_capacity_persons: 500,
+        allocated_population: 0,
+        slope_deg: 4.5,
+        status: 'APPROVED',
+        mcda_score: 85.0,
+        infrastructure: { water_tanks: 14, power_backup: '200 kVA Grid', medical_distance_km: 1.5, helipad: true }
+      },
+      {
+        id: 'dev-site-7',
+        name: 'Birahi Valley Elevated Multi-Agency Relief Center',
+        ring: '20-25 km',
+        lat: 30.4100,
+        lon: 79.4100,
+        distance_km: 21.05,
+        gross_area_sqm: 45000,
+        usable_area_sqm: 27000,
+        sphere_capacity_persons: 600,
+        allocated_population: 0,
+        slope_deg: 5.0,
+        status: 'APPROVED',
+        mcda_score: 84.0,
+        infrastructure: { water_tanks: 18, power_backup: '250 kVA Grid', medical_distance_km: 2.0, helipad: true }
       }
     ],
     fleet_logistics: {

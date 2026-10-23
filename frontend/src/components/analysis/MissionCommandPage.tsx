@@ -212,6 +212,35 @@ export const MissionCommandPage: React.FC<MissionCommandPageProps> = ({
     if (liveAnalysis.precipitation_telemetry?.computed_hazard_index) {
       merged.hazard_summary.computed_hazard_index = liveAnalysis.precipitation_telemetry.computed_hazard_index;
     }
+
+    // Synchronize candidate sanctuaries from backend progressive search
+    const decision = liveAnalysis.relocation_decision;
+    if (decision?.all_evaluated_candidates && decision.all_evaluated_candidates.length > 0) {
+      merged.candidate_sanctuaries = decision.all_evaluated_candidates.map((c: any) => ({
+        id: c.id,
+        name: c.name,
+        ring: c.ring_label || `Ring ${c.ring}`,
+        lat: c.coordinates.lat,
+        lon: c.coordinates.lon,
+        distance_km: c.distance_km,
+        gross_area_sqm: c.gross_area_sqm,
+        usable_area_sqm: c.estimated_usable_area_sqm || 0,
+        sphere_capacity_persons: c.shelter_capacity_persons,
+        allocated_population: c.allocated_population || 0,
+        slope_deg: c.slope_deg,
+        status: c.passed_hard_veto ? 'APPROVED' : 'HARD_VETO',
+        in_active_radius: c.in_active_radius,
+        veto_reasons: c.veto_reasons,
+        mcda_score: c.suitability?.score || 0,
+        infrastructure: {
+          water_tanks: c.infrastructure?.water === 'AVAILABLE' ? 12 : 2,
+          power_backup: c.infrastructure?.power || 'DG Backup',
+          medical_distance_km: c.infrastructure?.nearestHospitalKm || 2.5,
+          helipad: c.gross_area_sqm >= 35000
+        }
+      }));
+    }
+
     return merged;
   }, [baseScenario, liveAnalysis]);
 
@@ -412,7 +441,10 @@ export const MissionCommandPage: React.FC<MissionCommandPageProps> = ({
         {/* Tab 1: Full-Screen GIS Mission Map (Incident Drill-Down) */}
         {activeTab === 'map' && (
           <div className="w-full h-full min-h-0 min-w-0">
-            <GisSimulationMap scenario={currentScenario} />
+            <GisSimulationMap 
+              scenario={currentScenario} 
+              relocationDecision={liveAnalysis?.relocation_decision}
+            />
           </div>
         )}
 
@@ -429,7 +461,10 @@ export const MissionCommandPage: React.FC<MissionCommandPageProps> = ({
         {activeTab === 'relocation' && (
           <div className="w-full h-full overflow-y-auto min-h-0 p-4 lg:p-6">
             <div className="max-w-7xl mx-auto">
-              <RelocationEngineStudio scenario={currentScenario} />
+              <RelocationEngineStudio 
+                scenario={currentScenario} 
+                relocationDecision={liveAnalysis?.relocation_decision}
+              />
             </div>
           </div>
         )}

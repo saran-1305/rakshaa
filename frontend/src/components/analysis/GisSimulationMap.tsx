@@ -9,19 +9,22 @@ import {
   XCircle,
   Play,
   Pause,
-  RotateCcw
+  RotateCcw,
+  Sparkles
 } from 'lucide-react';
 
 interface GisSimulationMapProps {
   scenario: DisasterScenario;
   selectedSiteId?: string;
   onSelectSite?: (siteId: string) => void;
+  relocationDecision?: any;
 }
 
 export const GisSimulationMap: React.FC<GisSimulationMapProps> = ({
   scenario,
   selectedSiteId: controlledSiteId,
-  onSelectSite
+  onSelectSite,
+  relocationDecision
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
@@ -33,8 +36,40 @@ export const GisSimulationMap: React.FC<GisSimulationMapProps> = ({
   const [internalSelectedSiteId, setInternalSelectedSiteId] = useState<string | null>(null);
 
   // Progressive Concentric Ring Search State
-  const [searchRadiusKm, setSearchRadiusKm] = useState<number>(15.0);
+  // Backend final_search_radius_km is the authoritative source of truth
+  const backendOptimalRadius = useMemo(() => {
+    if (relocationDecision?.final_search_radius_km) {
+      return Number(relocationDecision.final_search_radius_km);
+    }
+    // Calculate smallest ring that accommodates population among approved candidates
+    const approved = scenario.candidate_sanctuaries.filter((s) => s.status === 'APPROVED');
+    let cumCap = 0;
+    let neededRadius = 5.0;
+    const sorted = [...approved].sort((a, b) => a.distance_km - b.distance_km);
+    for (const s of sorted) {
+      cumCap += s.sphere_capacity_persons;
+      neededRadius = Math.max(neededRadius, Math.ceil(s.distance_km / 5.0) * 5.0);
+      if (cumCap >= scenario.displaced_population) break;
+    }
+    return Math.min(25.0, Math.max(5.0, neededRadius));
+  }, [relocationDecision, scenario]);
+
+  const [searchRadiusKm, setSearchRadiusKm] = useState<number>(backendOptimalRadius);
+  const [isUserConstrained, setIsUserConstrained] = useState<boolean>(false);
   const [isAutoScanning, setIsAutoScanning] = useState<boolean>(false);
+
+  // Auto-sync search radius with backend result whenever backend result or scenario changes
+  useEffect(() => {
+    if (!isUserConstrained) {
+      setSearchRadiusKm(backendOptimalRadius);
+    }
+  }, [backendOptimalRadius, isUserConstrained]);
+
+  // When scenario changes, reset user override so backend authoritative radius takes precedence
+  useEffect(() => {
+    setIsUserConstrained(false);
+    setSearchRadiusKm(backendOptimalRadius);
+  }, [scenario.id]);
 
   const scanIntervalRef = useRef<any>(null);
 
@@ -127,11 +162,11 @@ export const GisSimulationMap: React.FC<GisSimulationMapProps> = ({
     if (isAutoScanning) {
       scanIntervalRef.current = setInterval(() => {
         setSearchRadiusKm((prev) => {
-          if (prev >= 15.0) {
+          if (prev >= backendOptimalRadius) {
             setIsAutoScanning(false);
-            return 15.0;
+            return backendOptimalRadius;
           }
-          return Number((prev + 0.15).toFixed(2));
+          return Number((prev + 0.25).toFixed(2));
         });
       }, 50);
     } else {
@@ -146,15 +181,16 @@ export const GisSimulationMap: React.FC<GisSimulationMapProps> = ({
         clearInterval(scanIntervalRef.current);
       }
     };
-  }, [isAutoScanning]);
+  }, [isAutoScanning, backendOptimalRadius]);
 
   const handleStartScan = () => {
+    setIsUserConstrained(false);
     setSearchRadiusKm(2.0);
     setIsAutoScanning(true);
   };
 
   const handleToggleAutoScan = () => {
-    if (searchRadiusKm >= 15.0) {
+    if (searchRadiusKm >= backendOptimalRadius) {
       setSearchRadiusKm(2.0);
       setIsAutoScanning(true);
     } else {
@@ -164,7 +200,14 @@ export const GisSimulationMap: React.FC<GisSimulationMapProps> = ({
 
   const handleJumpRing = (radius: number) => {
     setIsAutoScanning(false);
+    setIsUserConstrained(true);
     setSearchRadiusKm(radius);
+  };
+
+  const handleResetToBackend = () => {
+    setIsAutoScanning(false);
+    setIsUserConstrained(false);
+    setSearchRadiusKm(backendOptimalRadius);
   };
 
   // Compute live progressive stats
@@ -194,11 +237,6 @@ export const GisSimulationMap: React.FC<GisSimulationMapProps> = ({
     group.clearLayers();
 
     const { lat, lon } = scenario.centroid;
-    map.setView([lat, lon], 12, { animate: true });
-
-    setTimeout(() => {
-      map.invalidateSize();
-    }, 150);
 
     // Dynamic AOI Hazard Polygon
     L.circle([lat, lon], {
@@ -212,41 +250,24 @@ export const GisSimulationMap: React.FC<GisSimulationMapProps> = ({
       .bindTooltip(`Dynamic AOI Hazard Envelope: ${scenario.hazard_type}`, { permanent: false })
       .addTo(group);
 
-    // Concentric Reference Ring 1 (5 km)
-    L.circle([lat, lon], {
-      radius: 5000,
-      color: '#00E5FF',
-      weight: 1,
-      dashArray: '4, 6',
-      fillColor: 'transparent',
-      opacity: 0.45
-    })
-      .bindTooltip('Ring 1 Reference Boundary (5 km)', { permanent: false, direction: 'top' })
-      .addTo(group);
+    // Concentric Reference Rings (5km increments up to max(25km, searchRadiusKm))
+    const maxReferenceRadius = Math.max(25, Math.ceil(searchRadiusKm / 5) * 5);
+    const ringColors = ['#00E5FF', '#84FFFF', '#B2EBF2', '#80DEEA', '#4DD0E1'];
 
-    // Concentric Reference Ring 2 (10 km)
-    L.circle([lat, lon], {
-      radius: 10000,
-      color: '#84FFFF',
-      weight: 1,
-      dashArray: '3, 6',
-      fillColor: 'transparent',
-      opacity: 0.35
-    })
-      .bindTooltip('Ring 2 Reference Boundary (10 km)', { permanent: false, direction: 'top' })
-      .addTo(group);
-
-    // Concentric Reference Ring 3 (15 km)
-    L.circle([lat, lon], {
-      radius: 15000,
-      color: '#B2EBF2',
-      weight: 1,
-      dashArray: '2, 6',
-      fillColor: 'transparent',
-      opacity: 0.25
-    })
-      .bindTooltip('Ring 3 Search Boundary (15 km)', { permanent: false, direction: 'top' })
-      .addTo(group);
+    for (let r = 5; r <= maxReferenceRadius; r += 5) {
+      const ringIdx = r / 5;
+      const ringColor = ringColors[(ringIdx - 1) % ringColors.length];
+      L.circle([lat, lon], {
+        radius: r * 1000,
+        color: ringColor,
+        weight: 1,
+        dashArray: '3, 6',
+        fillColor: 'transparent',
+        opacity: r <= searchRadiusKm ? 0.45 : 0.20
+      })
+        .bindTooltip(`Ring ${ringIdx} (${r} km Boundary)`, { permanent: false, direction: 'top' })
+        .addTo(group);
+    }
 
     // Centroid Hazard Marker
     const hazardIcon = L.divIcon({
@@ -292,7 +313,7 @@ export const GisSimulationMap: React.FC<GisSimulationMapProps> = ({
             </div>
           `
         : `
-          <div class="w-4 h-4 bg-white/20 border border-white/40 rounded-full flex items-center justify-center text-[8px] text-white/50 opacity-40">
+          <div class="w-4 h-4 bg-white/20 border border-white/40 rounded-full flex items-center justify-center text-[8px] text-white/50 opacity-40 cursor-pointer hover:opacity-80 transition-opacity" title="Beyond active radius (${site.distance_km} km)">
             ○
           </div>
         `;
@@ -317,24 +338,49 @@ export const GisSimulationMap: React.FC<GisSimulationMapProps> = ({
           opacity: isSelected ? 0.95 : 0.65,
           dashArray: isApproved ? '5, 5' : '2, 6'
         }).addTo(group);
+      }
 
-        const popupHtml = `
-          <div style="color: #111; font-family: sans-serif; min-width: 190px; padding: 4px;">
-            <h4 style="margin: 0; font-weight: bold; color: ${isApproved ? '#00838f' : '#c62828'};">${site.name}</h4>
-            <p style="margin: 4px 0 2px; font-size: 11px;">Status: <strong>${site.status}</strong></p>
-            <p style="margin: 2px 0 2px; font-size: 11px;">Distance: <strong>${site.distance_km} km</strong> (${site.ring})</p>
-            <p style="margin: 2px 0 2px; font-size: 11px;">Slope: <strong>${site.slope_deg}°</strong> | Sphere Cap: <strong>${site.sphere_capacity_persons}</strong></p>
-            ${!isApproved && site.veto_reasons ? `<p style="margin: 4px 0 0; font-size: 10px; color: #b71c1c; font-weight: 600;">Veto: ${site.veto_reasons.join(', ')}</p>` : ''}
-          </div>
-        `;
+      const popupHtml = `
+        <div style="color: #111; font-family: sans-serif; min-width: 190px; padding: 4px;">
+          <h4 style="margin: 0; font-weight: bold; color: ${isApproved ? '#00838f' : '#c62828'};">${site.name}</h4>
+          <p style="margin: 4px 0 2px; font-size: 11px;">Status: <strong>${site.status}</strong> ${isInRange ? '(In Range)' : '(Out of Range)'}</p>
+          <p style="margin: 2px 0 2px; font-size: 11px;">Distance: <strong>${site.distance_km} km</strong> (${site.ring})</p>
+          <p style="margin: 2px 0 2px; font-size: 11px;">Slope: <strong>${site.slope_deg}°</strong> | Sphere Cap: <strong>${site.sphere_capacity_persons}</strong></p>
+          ${site.allocated_population > 0 ? `<p style="margin: 2px 0 2px; font-size: 11px; color: #00838f; font-weight: bold;">Allocated: ${site.allocated_population} persons</p>` : ''}
+          ${!isApproved && site.veto_reasons ? `<p style="margin: 4px 0 0; font-size: 10px; color: #b71c1c; font-weight: 600;">Veto: ${site.veto_reasons.join(', ')}</p>` : ''}
+        </div>
+      `;
 
-        marker.bindPopup(popupHtml);
-        marker.on('click', () => {
-          setInternalSelectedSiteId(site.id);
-          if (onSelectSite) onSelectSite(site.id);
-        });
+      marker.bindPopup(popupHtml);
+      marker.on('click', () => {
+        setInternalSelectedSiteId(site.id);
+        if (onSelectSite) onSelectSite(site.id);
+      });
+    });
+
+    // Fit map bounds accurately to encompass the hazard centroid, active search boundary, and candidate sites
+    const mPerDegLat = 111139.0;
+    const mPerDegLon = 111139.0 * Math.cos((lat * Math.PI) / 180.0);
+    const radiusMeters = searchRadiusKm * 1000;
+    const dLat = radiusMeters / mPerDegLat;
+    const dLon = radiusMeters / mPerDegLon;
+
+    const lats = [lat - dLat, lat + dLat];
+    const lons = [lon - dLon, lon + dLon];
+
+    scenario.candidate_sanctuaries.forEach((s) => {
+      if (s.distance_km <= searchRadiusKm) {
+        lats.push(s.lat);
+        lons.push(s.lon);
       }
     });
+
+    const bounds = L.latLngBounds(
+      [Math.min(...lats), Math.min(...lons)],
+      [Math.max(...lats), Math.max(...lons)]
+    );
+
+    map.fitBounds(bounds, { padding: [45, 45], maxZoom: 14, animate: true });
   }, [scenario, activeSiteId, onSelectSite, searchRadiusKm]);
 
   // 5. Separate layer to smoothly redraw ONLY the active expanding search radar ring
@@ -369,24 +415,16 @@ export const GisSimulationMap: React.FC<GisSimulationMapProps> = ({
   }, [scenario.centroid, searchRadiusKm]);
 
   // Phase messaging based on active expansion range
-  const currentPhase =
-    searchRadiusKm <= 5.2
-      ? {
-          title: 'PHASE 1: RING 1 IMMEDIATE SEARCH (0–5 KM)',
-          desc: 'Evaluating closest candidate parcels against Zero-Tolerance Hard Veto slope thresholds.',
-          statusColor: 'text-amber-400'
-        }
-      : searchRadiusKm <= 10.2
-      ? {
-          title: 'PHASE 2: RING 2 INTERMEDIATE EXPANSION (5–10 KM)',
-          desc: 'Closest Safe Ground search radius expanding outward. Identifying primary educational & civic complexes.',
-          statusColor: 'text-cyan-400'
-        }
-      : {
-          title: 'PHASE 3: RING 3 EXTENDED SANCTUARY (10–15 KM)',
-          desc: 'Final ring search boundary reached. Full Sphere Humanitarian capacity verified.',
-          statusColor: 'text-emerald-400'
-        };
+  const currentRingNumber = Math.max(1, Math.ceil(searchRadiusKm / 5.0));
+  const currentRingMin = (currentRingNumber - 1) * 5;
+  const currentRingMax = currentRingNumber * 5;
+
+  const currentPhaseTitle = `PHASE ${currentRingNumber}: RING ${currentRingNumber} (${currentRingMin}–${currentRingMax} KM)`;
+  const currentPhaseDesc = relocationDecision?.status_explanation || (
+    coveragePercent >= 100
+      ? `Sufficient safe capacity (${safeCapacityInRange.toLocaleString()} persons) found within ${searchRadiusKm.toFixed(1)} km.`
+      : `Searching for safe terrain outside flood/landslide perimeters. Shortfall: ${(scenario.displaced_population - safeCapacityInRange).toLocaleString()} persons.`
+  );
 
   return (
     <div className="relative w-full h-full min-h-0 min-w-0 flex flex-col bg-[#05080E] overflow-hidden select-none font-sans">
@@ -426,7 +464,7 @@ export const GisSimulationMap: React.FC<GisSimulationMapProps> = ({
                   ? 'bg-amber-400 text-black shadow-md shadow-amber-400/20'
                   : 'bg-cyan-400 hover:bg-cyan-300 text-black shadow-md shadow-cyan-400/20'
               }`}
-              title="Toggle automatic progressive ring expansion simulation"
+              title="Toggle automatic progressive ring expansion"
             >
               {isAutoScanning ? (
                 <>
@@ -436,7 +474,7 @@ export const GisSimulationMap: React.FC<GisSimulationMapProps> = ({
               ) : (
                 <>
                   <Play className="w-3.5 h-3.5" />
-                  <span>{searchRadiusKm >= 15 ? 'REPLAY SWEEP' : 'EXPAND RANGE'}</span>
+                  <span>{searchRadiusKm >= backendOptimalRadius ? 'REPLAY SWEEP' : 'EXPAND SWEEP'}</span>
                 </>
               )}
             </button>
@@ -444,15 +482,28 @@ export const GisSimulationMap: React.FC<GisSimulationMapProps> = ({
             <button
               onClick={handleStartScan}
               className="p-1 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white transition-colors"
-              title="Reset search to 0 km"
+              title="Reset search to 2 km"
             >
               <RotateCcw className="w-3.5 h-3.5" />
             </button>
+
+            {isUserConstrained && (
+              <button
+                onClick={handleResetToBackend}
+                className="flex items-center gap-1 px-2 py-1 rounded-lg bg-cyan-950/80 border border-cyan-500/50 text-cyan-300 hover:bg-cyan-900 text-[10px] font-bold transition-all"
+                title="Reset active radius to backend calculated result"
+              >
+                <Sparkles className="w-3 h-3 text-cyan-400" />
+                <span>AUTO ({backendOptimalRadius.toFixed(0)}k)</span>
+              </button>
+            )}
           </div>
 
           {/* Active Range Readout */}
           <div className="flex items-center gap-2 text-right">
-            <span className="text-white/50 text-[10px]">SEARCH RADIUS:</span>
+            <span className="text-white/50 text-[10px]">
+              {isUserConstrained ? 'MANUAL RADIUS:' : 'ACTIVE SEARCH RADIUS:'}
+            </span>
             <span className="text-sm font-bold text-cyan-300 tracking-wider">
               {searchRadiusKm.toFixed(1)} km
             </span>
@@ -465,58 +516,50 @@ export const GisSimulationMap: React.FC<GisSimulationMapProps> = ({
           <input
             type="range"
             min={3.0}
-            max={15.0}
-            step={0.1}
+            max={25.0}
+            step={0.5}
             value={searchRadiusKm}
             onChange={(e) => {
               setIsAutoScanning(false);
+              setIsUserConstrained(true);
               setSearchRadiusKm(parseFloat(e.target.value));
             }}
-            className="w-40 sm:w-56 accent-cyan-400 cursor-pointer h-1.5 bg-white/20 rounded-lg"
+            className="w-36 sm:w-52 accent-cyan-400 cursor-pointer h-1.5 bg-white/20 rounded-lg"
           />
-          <span className="text-[10px] text-white/40">15km</span>
+          <span className="text-[10px] text-white/40">25km</span>
 
-          <div className="flex items-center gap-1 ml-auto">
-            <button
-              onClick={() => handleJumpRing(5.0)}
-              className={`px-2 py-0.5 rounded text-[10px] font-bold cursor-pointer transition-colors ${
-                searchRadiusKm <= 5.5
-                  ? 'bg-cyan-500/30 text-cyan-300 border border-cyan-400/60'
-                  : 'bg-white/5 text-white/60 hover:text-white'
-              }`}
-            >
-              Ring 1 (5k)
-            </button>
-            <button
-              onClick={() => handleJumpRing(10.0)}
-              className={`px-2 py-0.5 rounded text-[10px] font-bold cursor-pointer transition-colors ${
-                searchRadiusKm > 5.5 && searchRadiusKm <= 10.5
-                  ? 'bg-cyan-500/30 text-cyan-300 border border-cyan-400/60'
-                  : 'bg-white/5 text-white/60 hover:text-white'
-              }`}
-            >
-              Ring 2 (10k)
-            </button>
-            <button
-              onClick={() => handleJumpRing(15.0)}
-              className={`px-2 py-0.5 rounded text-[10px] font-bold cursor-pointer transition-colors ${
-                searchRadiusKm > 10.5
-                  ? 'bg-cyan-500/30 text-cyan-300 border border-cyan-400/60'
-                  : 'bg-white/5 text-white/60 hover:text-white'
-              }`}
-            >
-              Ring 3 (15k)
-            </button>
+          <div className="flex items-center gap-1 ml-auto flex-wrap">
+            {[5, 10, 15, 20, 25].map((ringRadius) => {
+              const rIdx = ringRadius / 5;
+              const isActive = Math.abs(searchRadiusKm - ringRadius) < 2.5;
+              return (
+                <button
+                  key={ringRadius}
+                  onClick={() => handleJumpRing(ringRadius)}
+                  className={`px-1.5 py-0.5 rounded text-[10px] font-bold cursor-pointer transition-colors ${
+                    isActive
+                      ? 'bg-cyan-500/30 text-cyan-300 border border-cyan-400/60'
+                      : 'bg-white/5 text-white/60 hover:text-white'
+                  }`}
+                >
+                  R{rIdx} ({ringRadius}k)
+                </button>
+              );
+            })}
           </div>
         </div>
 
         {/* Live Expansion Metrics Banner */}
         <div className="flex items-center justify-between gap-3 text-[10px] pt-1 border-t border-white/5">
-          <div className="flex items-center gap-2">
-            <span className={`font-bold ${currentPhase.statusColor}`}>{currentPhase.title}</span>
+          <div className="flex items-center gap-2 max-w-[280px] truncate">
+            <span className="font-bold text-cyan-400">{currentPhaseTitle}</span>
+            <span className="text-white/40 hidden sm:inline">•</span>
+            <span className="text-white/60 truncate hidden sm:inline" title={currentPhaseDesc}>
+              {currentPhaseDesc}
+            </span>
           </div>
 
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2.5 flex-shrink-0">
             <span className="text-white/60">
               Discovered Safe Cap:{' '}
               <strong className="text-emerald-400">{safeCapacityInRange.toLocaleString()}</strong> /{' '}
@@ -615,11 +658,19 @@ export const GisSimulationMap: React.FC<GisSimulationMapProps> = ({
                 {selectedSite.sphere_capacity_persons.toLocaleString()} Persons (45 m² standard)
               </span>
             </div>
+            {selectedSite.allocated_population > 0 && (
+              <div className="flex justify-between text-white/70">
+                <span>Allocated Evacuees:</span>
+                <span className="text-emerald-400 font-bold">
+                  {selectedSite.allocated_population.toLocaleString()} Persons
+                </span>
+              </div>
+            )}
             <div className="flex justify-between text-white/70">
               <span>Multi-Criteria Utility:</span>
               <span className="text-amber-300 font-bold">{selectedSite.mcda_score} / 100</span>
             </div>
-            {selectedSite.veto_reasons && (
+            {selectedSite.veto_reasons && selectedSite.veto_reasons.length > 0 && (
               <div className="mt-2 pt-2 border-t border-red-500/30 text-red-300 text-[10px] leading-relaxed">
                 ⚠️ <strong>ZERO-TOLERANCE HARD VETO:</strong> {selectedSite.veto_reasons.join(' • ')}
               </div>
@@ -637,7 +688,7 @@ export const GisSimulationMap: React.FC<GisSimulationMapProps> = ({
       <div className="absolute bottom-6 right-6 z-10 bg-black/90 backdrop-blur-md border border-white/15 px-3 py-2.5 rounded-lg pointer-events-none text-[10px] font-mono space-y-1.5 shadow-2xl hidden sm:block">
         <div className="text-white/40 border-b border-white/10 pb-1 flex justify-between">
           <span>PROGRESSIVE CONCENTRIC SEARCH</span>
-          <span>5km ➔ 10km ➔ 15km</span>
+          <span>5km ➔ 10km ➔ 15km ➔ 20km ➔ 25km</span>
         </div>
         <div className="flex items-center gap-2">
           <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse" />
@@ -653,9 +704,10 @@ export const GisSimulationMap: React.FC<GisSimulationMapProps> = ({
         </div>
         <div className="flex items-center gap-2">
           <span className="w-3 h-0.5 border-b border-dashed border-cyan-400" />
-          <span className="text-cyan-300 font-bold">Active Expanding Search Wave</span>
+          <span className="text-cyan-300 font-bold">Active Search Radar Ring ({searchRadiusKm.toFixed(1)} km)</span>
         </div>
       </div>
     </div>
   );
 };
+
