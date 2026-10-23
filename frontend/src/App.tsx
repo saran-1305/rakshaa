@@ -104,8 +104,10 @@ function App() {
         {/* Cinematic Landing Page */}
         <Route path="/" element={<LandingPage />} />
 
-        {/* Full-Screen Standalone Disaster Management Command Center */}
+        {/* Full-Screen Standalone Disaster Management Command Center & Global Discovery */}
         <Route path="/command-center" element={<MissionCommandPage />} />
+        <Route path="/global" element={<MissionCommandPage />} />
+        <Route path="/incidents/:incidentId" element={<MissionCommandPage />} />
 
         {/* Legacy / Compatibility Entry Routes */}
         <Route path="/simulation" element={<Navigate to="/command-center" replace />} />

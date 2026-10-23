@@ -16,6 +16,7 @@ from relocation_engine import RelocationEngine
 from bhoonidhi_client import bhoonidhi_service
 from bhuvan_client import bhuvan_service
 from worldpop_client import worldpop_service
+from global_events_service import global_events_service
 
 app = FastAPI(
     title="RAKSHA Disaster Relocation Engine",
@@ -97,6 +98,33 @@ class AnalysisRequest(BaseModel):
 @app.get("/api/health")
 def health_check():
     return sat_service.probe_component_health()
+
+@app.get("/api/global-incidents")
+def get_global_incidents(
+    category: Optional[str] = None,
+    min_severity: Optional[float] = None,
+    include_demo: bool = True,
+    refresh: bool = False
+):
+    """
+    Returns global disaster incidents normalized from USGS, NASA EONET, and verified presets.
+    """
+    return global_events_service.fetch_all_incidents(
+        category=category,
+        min_severity=min_severity,
+        include_demo=include_demo,
+        force_refresh=refresh
+    )
+
+@app.get("/api/global-incidents/{incident_id}")
+def get_global_incident_detail(incident_id: str):
+    """
+    Returns full details for a specific global incident or preset.
+    """
+    incident = global_events_service.get_incident_by_id(incident_id)
+    if not incident:
+        raise HTTPException(status_code=404, detail=f"Incident '{incident_id}' not found")
+    return incident
 
 @app.get("/api/presets")
 def get_presets():

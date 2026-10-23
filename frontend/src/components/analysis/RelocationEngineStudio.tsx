@@ -75,7 +75,26 @@ export const RelocationEngineStudio: React.FC<RelocationEngineStudioProps> = ({ 
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
-              {scenario.candidate_sanctuaries.map((site) => {
+              {scenario.candidate_sanctuaries.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="py-10 px-4 text-center">
+                    <div className="flex flex-col items-center justify-center gap-2 max-w-lg mx-auto">
+                      <ShieldAlert className="w-8 h-8 text-amber-400" />
+                      <span className="text-white font-bold text-xs uppercase tracking-wider">
+                        No Pre-Indexed Candidate Sanctuaries For Live Incident Sector
+                      </span>
+                      <p className="text-white/60 text-[11px] leading-relaxed">
+                        This sourced incident (<strong>{scenario.name}</strong>) is situated at{' '}
+                        <span className="text-cyan-300 font-mono">
+                          {scenario.centroid.lat.toFixed(4)}° N, {scenario.centroid.lon.toFixed(4)}° E
+                        </span>
+                        . To maintain safety integrity without fabricating data, RAKSHA requires local OSM facility ingestion or verified regional benchmark presets (Devgram, Wayanad, Silchar, Chamoli, Munambam).
+                      </p>
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                scenario.candidate_sanctuaries.map((site) => {
                 const isApproved = site.status === 'APPROVED';
                 return (
                   <tr key={site.id} className="hover:bg-white/5 transition-colors">
@@ -116,7 +135,7 @@ export const RelocationEngineStudio: React.FC<RelocationEngineStudioProps> = ({ 
                     </td>
                   </tr>
                 );
-              })}
+              }))}
             </tbody>
           </table>
         </div>

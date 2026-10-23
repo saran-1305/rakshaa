@@ -802,3 +802,111 @@ export const SYNTHETIC_SCENARIOS: Record<string, DisasterScenario> = {
     }
   }
 };
+
+export function createScenarioFromGlobalIncident(incident: {
+  id: string;
+  title: string;
+  place: string;
+  hazard_type: string;
+  lat: number;
+  lon: number;
+  severity: number;
+  alert_level: 'critical' | 'warning' | 'advisory' | 'moderate' | 'info';
+  is_demo_preset?: boolean;
+  default_population?: number;
+}): DisasterScenario {
+  const isCrit = incident.alert_level === 'critical';
+  const defaultPop = incident.default_population && incident.default_population > 0 
+    ? incident.default_population 
+    : 1450;
+
+  return {
+    id: incident.id,
+    name: incident.title,
+    state: incident.place,
+    centroid: { lat: incident.lat, lon: incident.lon },
+    hazard_type: incident.hazard_type,
+    displaced_population: defaultPop,
+    planning_window_mins: isCrit ? 45 : 90,
+    primary_route_name: 'Identified Regional Evacuation Arterial',
+    hazard_summary: {
+      severity: isCrit ? 'CRITICAL' : 'HIGH',
+      rainfall_24h_mm: 68,
+      cloudburst_intensity: isCrit ? 'High Risk Sector' : 'Moderate Sector',
+      soil_saturation_pct: 72,
+      computed_hazard_index: incident.severity || 0.75,
+      flow_vector: { bearing_deg: 165, speed_mps: 1.8 }
+    },
+    satellite_telemetry: {
+      sentinel1_sar: {
+        orbit: 142,
+        pass: 'DESCENDING',
+        mode: 'IW (Interferometric Wide)',
+        polarization: 'VV + VH',
+        gamma0_backscatter_db: -14.6,
+        specular_anomaly: true,
+        scene_id: `S1A_IW_GRDH_1SDV_${incident.id.slice(0, 10).toUpperCase()}`,
+        timestamp: new Date().toISOString()
+      },
+      sentinel2_optical: {
+        tile: `T${Math.abs(Math.round(incident.lat))}${Math.abs(Math.round(incident.lon))}`,
+        cloud_coverage_pct: 18,
+        resolution_m: 10,
+        ndwi_water_index: 0.58,
+        ndvi_vegetation: 0.32,
+        scene_id: `S2B_MSIL2A_${incident.id.slice(0, 8).toUpperCase()}`
+      },
+      cartosat3_highres: {
+        sensor: 'PAN + 4-Band MX',
+        gsd_pan_m: 0.28,
+        gsd_ms_m: 1.12,
+        structural_footprint_density_pct: 42,
+        unblocked_open_ground_sqm: 14500,
+        helipad_clearance_45m: 'PENDING_REGIONAL_RADAR_SURVEY'
+      },
+      isro_bhuvan: {
+        lulc_classification: 'Global Sector / Natural Terrain',
+        historical_disaster_tier: isCrit ? 'Tier-1 Immediate Priority' : 'Tier-2 Active Monitoring',
+        drainage_buffer_m: 350
+      },
+      worldpop: {
+        grid_resolution: '100m constrained raster',
+        estimated_aoi_exposure: defaultPop,
+        vulnerable_demographics: { infants_pct: 14, elderly_pct: 18, mobility_impaired: 6 }
+      }
+    },
+    srtm_transect: {
+      min_elevation_m: 120,
+      max_elevation_m: 680,
+      max_gradient_pct: 18.2,
+      points: [
+        { dist_km: 0.0, elevation_m: 120, slope_pct: 4.1, label: 'Centroid Baseline' },
+        { dist_km: 2.5, elevation_m: 230, slope_pct: 8.4, label: 'Ring 1 Valley' },
+        { dist_km: 5.0, elevation_m: 390, slope_pct: 14.1, label: 'Ridge Buffer' },
+        { dist_km: 8.0, elevation_m: 540, slope_pct: 17.5, label: 'Intermediate Ridge' },
+        { dist_km: 12.0, elevation_m: 680, slope_pct: 11.2, label: 'High Plain Plateau' }
+      ]
+    },
+    candidate_sanctuaries: [],
+    fleet_logistics: {
+      total_evacuees: defaultPop,
+      default_fleet_size: Math.max(12, Math.round(defaultPop / 90)),
+      default_bus_capacity: 50,
+      speed_kmh: 30,
+      turnaround_time_mins: 40,
+      total_cycles_needed: 2,
+      evacuation_clearance_mins: 110,
+      fuel_liters: 320
+    },
+    ddma_directive: {
+      order_no: `INTEL/GLOBAL-INCIDENT/${incident.id.toUpperCase().slice(0, 14)}`,
+      incident_commander: 'RAKSHA Operational Disaster Command',
+      legal_act: 'UN OCHA / Sendai Framework Disaster Protocol',
+      executive_summary: `Sourced global hazard monitoring for ${incident.title} in sector ${incident.place}. Immediate command coordination activated.`,
+      authorized_actions: [
+        'Deploy orbital optical and radar sensors to geodetic centroid.',
+        'Request regional municipal emergency services and logistics mobilization.'
+      ]
+    }
+  };
+}

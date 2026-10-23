@@ -18,6 +18,41 @@ export interface BackendHealthResponse {
   components: Record<string, ComponentHealthInfo>;
 }
 
+export interface GlobalIncident {
+  id: string;
+  provider: 'USGS' | 'NASA_EONET' | 'RAKSHA_BENCHMARK' | string;
+  provider_event_id: string;
+  title: string;
+  place: string;
+  hazard_category: 'earthquake' | 'storm' | 'wildfire' | 'volcano' | 'flood' | 'landslide' | 'other';
+  hazard_type: string;
+  lat: number;
+  lon: number;
+  depth_km: number;
+  severity: number;
+  severity_unit: string;
+  alert_level: 'critical' | 'warning' | 'moderate' | 'advisory';
+  event_time: string;
+  updated_time: string;
+  source_url: string;
+  is_demo_preset: boolean;
+  can_run_relocation_analysis: boolean;
+  default_population: number;
+  planning_window_mins?: number;
+  primary_route_name?: string;
+  provenance: string;
+  description?: string;
+}
+
+export interface GlobalIncidentsResponse {
+  status: string;
+  timestamp: string;
+  cache_age_seconds: number;
+  total_count: number;
+  providers: Record<string, { status: string; count?: number; latency_ms?: number; [k: string]: any }>;
+  incidents: GlobalIncident[];
+}
+
 export interface BackendPreset {
   id: string;
   name: string;
@@ -183,6 +218,39 @@ class ApiClient {
     const res = await this.fetchWithTimeout(`${this.baseUrl}/health`);
     if (!res.ok) {
       throw new Error(`Health check failed: HTTP ${res.status}`);
+    }
+    return res.json();
+  }
+
+  /**
+   * Retrieves live global disaster incidents normalized from USGS, NASA EONET, and verified presets.
+   */
+  public async getGlobalIncidents(params: {
+    category?: string;
+    min_severity?: number;
+    include_demo?: boolean;
+    refresh?: boolean;
+  } = {}): Promise<GlobalIncidentsResponse> {
+    const q = new URLSearchParams();
+    if (params.category) q.append('category', params.category);
+    if (params.min_severity !== undefined) q.append('min_severity', params.min_severity.toString());
+    if (params.include_demo !== undefined) q.append('include_demo', params.include_demo.toString());
+    if (params.refresh) q.append('refresh', 'true');
+
+    const res = await this.fetchWithTimeout(`${this.baseUrl}/global-incidents?${q.toString()}`);
+    if (!res.ok) {
+      throw new Error(`Failed to fetch global incidents: HTTP ${res.status}`);
+    }
+    return res.json();
+  }
+
+  /**
+   * Resolves detail for a single global incident or preset.
+   */
+  public async getGlobalIncident(incidentId: string): Promise<GlobalIncident> {
+    const res = await this.fetchWithTimeout(`${this.baseUrl}/global-incidents/${encodeURIComponent(incidentId)}`);
+    if (!res.ok) {
+      throw new Error(`Failed to fetch incident ${incidentId}: HTTP ${res.status}`);
     }
     return res.json();
   }

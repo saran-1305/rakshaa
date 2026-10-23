@@ -46,6 +46,35 @@ def test_presets_endpoint():
     assert "wayanad" in ids
     assert "silchar" in ids
 
+def test_global_incidents_endpoint():
+    """Verify global incidents retrieval, normalization, and detail resolution."""
+    response = client.get("/api/global-incidents?include_demo=true")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "success"
+    assert "total_count" in data
+    assert data["total_count"] > 0
+    assert "providers" in data
+    assert "incidents" in data
+    assert len(data["incidents"]) > 0
+
+    first_inc = data["incidents"][0]
+    assert "id" in first_inc
+    assert "lat" in first_inc
+    assert "lon" in first_inc
+    assert "hazard_category" in first_inc
+    assert "alert_level" in first_inc
+
+    # Test single incident detail resolution
+    detail_res = client.get(f"/api/global-incidents/{first_inc['id']}")
+    assert detail_res.status_code == 200
+    detail = detail_res.json()
+    assert detail["id"] == first_inc["id"]
+
+    # Test 404 for unknown incident
+    unknown_res = client.get("/api/global-incidents/unknown-9999999")
+    assert unknown_res.status_code == 404
+
 def test_scenarios_endpoint():
     """Verify detailed scenario metadata."""
     response = client.get("/api/scenarios")
@@ -130,6 +159,8 @@ if __name__ == "__main__":
     print("[PASS] test_health_endpoint passed")
     test_presets_endpoint()
     print("[PASS] test_presets_endpoint passed")
+    test_global_incidents_endpoint()
+    print("[PASS] test_global_incidents_endpoint passed")
     test_scenarios_endpoint()
     print("[PASS] test_scenarios_endpoint passed")
     test_analyze_endpoint_and_hard_veto()
