@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { SYNTHETIC_SCENARIOS, type DisasterScenario } from '../../data/syntheticScenarios';
+import { apiClient, type BackendHealthResponse, type BackendPreset, type BackendAnalysisResponse } from '../../services/apiClient';
 import { GisSimulationMap } from './GisSimulationMap';
 import { EarthObservationStudio } from './EarthObservationStudio';
 import { RelocationEngineStudio } from './RelocationEngineStudio';
@@ -15,7 +16,9 @@ import {
   RefreshCw,
   Sparkles,
   ArrowLeft,
-  Database
+  Database,
+  Activity,
+  AlertCircle
 } from 'lucide-react';
 
 interface MissionCommandPageProps {
@@ -30,35 +33,127 @@ export const MissionCommandPage: React.FC<MissionCommandPageProps> = ({
   const [activeTab, setActiveTab] = useState<'map' | 'eo' | 'relocation' | 'fleet' | 'ddma'>('map');
   const [isScanning, setIsScanning] = useState<boolean>(false);
   const [scanStep, setScanStep] = useState<string>('');
+  const [apiNotice, setApiNotice] = useState<string | null>(null);
 
-  const currentScenario: DisasterScenario =
+  // Backend Health & Provenance
+  const [backendHealth, setBackendHealth] = useState<BackendHealthResponse | null>(null);
+  const [presets, setPresets] = useState<BackendPreset[]>([
+    { id: 'devgram', name: 'Devgram (Chamoli, UK)', lat: 30.3207, lon: 79.2163, hazard_type: 'Glacial Inundation & Landslide Runoff', default_population: 720, description: '' },
+    { id: 'wayanad', name: 'Chooralmala (Wayanad, KL)', lat: 11.5126, lon: 76.1287, hazard_type: 'Landslide & Torrential Inundation', default_population: 2450, description: '' },
+    { id: 'silchar', name: 'Silchar (Barak Valley, AS)', lat: 24.8333, lon: 92.7789, hazard_type: 'Riverine Inundation & Embankment Breach', default_population: 14800, description: '' },
+    { id: 'chamoli', name: 'Joshimath Subsidence (UK)', lat: 30.5574, lon: 79.5670, hazard_type: 'Land Subsidence & Slope Destabilization', default_population: 2800, description: '' },
+    { id: 'munambam', name: 'Munambam Coastal Surge (KL)', lat: 10.1792, lon: 76.1738, hazard_type: 'Coastal Storm Surge & Sea Ingress', default_population: 3500, description: '' }
+  ]);
+  const [liveAnalysis, setLiveAnalysis] = useState<BackendAnalysisResponse | null>(null);
+
+  const baseScenario: DisasterScenario =
     SYNTHETIC_SCENARIOS[selectedScenarioId] || SYNTHETIC_SCENARIOS['devgram'];
+
+  // Probe backend health & presets on mount
+  useEffect(() => {
+    let mounted = true;
+
+    async function probeBackend() {
+      try {
+        const health = await apiClient.getHealth();
+        if (mounted) {
+          setBackendHealth(health);
+        }
+      } catch {
+        if (mounted) {
+          setBackendHealth(null);
+        }
+      }
+
+      try {
+        const fetchedPresets = await apiClient.getPresets();
+        if (mounted && Array.isArray(fetchedPresets) && fetchedPresets.length > 0) {
+          setPresets(fetchedPresets);
+        }
+      } catch {
+        // Fallback to static presets if backend presets endpoint is unreachable
+      }
+    }
+
+    probeBackend();
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const handleScenarioChange = (newId: string) => {
     setSelectedScenarioId(newId);
-    triggerScanAnimation();
+    setLiveAnalysis(null);
+    triggerScanAnimation(newId);
   };
 
-  const triggerScanAnimation = () => {
+  const triggerScanAnimation = async (scenarioIdToScan: string = selectedScenarioId) => {
     setIsScanning(true);
-    setScanStep('Querying Sentinel-1 SAR STAC radar backscatter...');
-    setTimeout(() => {
-      setScanStep('Computing SRTM 30m DEM elevation transect...');
-    }, 250);
-    setTimeout(() => {
-      setScanStep('Applying Zero-Tolerance Hard Veto slope & debris filters...');
-    }, 500);
-    setTimeout(() => {
-      setScanStep('Executing Sphere Project humanitarian knapsack allocation...');
-    }, 750);
-    setTimeout(() => {
+    setApiNotice(null);
+    const targetScenario = SYNTHETIC_SCENARIOS[scenarioIdToScan] || baseScenario;
+
+    setScanStep('Querying Sentinel-1 C-Band SAR STAC radar backscatter...');
+
+    const timer1 = setTimeout(() => {
+      setScanStep('Sampling SRTM 30m Digital Elevation Model (DEM) transect...');
+    }, 300);
+
+    const timer2 = setTimeout(() => {
+      setScanStep('Evaluating OpenStreetMap candidates against Zero-Tolerance Hard Veto...');
+    }, 600);
+
+    const timer3 = setTimeout(() => {
+      setScanStep('Computing Sphere Project international humanitarian shelter knapsack...');
+    }, 900);
+
+    try {
+      // Call actual FastAPI backend analysis endpoint
+      const result = await apiClient.runAnalysis({
+        lat: targetScenario.centroid.lat,
+        lon: targetScenario.centroid.lon,
+        displaced_population: targetScenario.displaced_population,
+        hazard_type: targetScenario.hazard_type
+      });
+
+      setLiveAnalysis(result);
+      setApiNotice(`Live analysis complete. Provenance: ${result.data_provenance?.overall_mode || 'LIVE'}`);
+    } catch (err: any) {
+      // Transparent fallback if backend is unreachable
+      setApiNotice(`Backend notice: Analysis running with cached synthetic baseline (${err.message || 'Offline mode'})`);
+    } finally {
+      clearTimeout(timer1);
+      clearTimeout(timer2);
+      clearTimeout(timer3);
       setIsScanning(false);
-    }, 1000);
+    }
   };
 
   const handleExit = () => {
     navigate('/');
   };
+
+  // Merge live analysis results with scenario if available
+  const currentScenario: DisasterScenario = React.useMemo(() => {
+    if (!liveAnalysis) return baseScenario;
+
+    const merged = { ...baseScenario };
+    if (liveAnalysis.location_name) {
+      merged.name = liveAnalysis.location_name;
+    }
+    if (liveAnalysis.precipitation_telemetry?.rainfall_mm) {
+      merged.hazard_summary.rainfall_24h_mm = liveAnalysis.precipitation_telemetry.rainfall_mm;
+    }
+    if (liveAnalysis.precipitation_telemetry?.computed_hazard_index) {
+      merged.hazard_summary.computed_hazard_index = liveAnalysis.precipitation_telemetry.computed_hazard_index;
+    }
+    return merged;
+  }, [baseScenario, liveAnalysis]);
+
+  const provenanceBadge = liveAnalysis?.data_provenance
+    ? `DATA PROVENANCE: ${liveAnalysis.data_provenance.overall_mode} • SENTINEL: ${liveAnalysis.data_provenance.sentinel1}`
+    : backendHealth
+    ? `DATA PIPELINE: FASTAPI ONLINE (${backendHealth.overall_status.toUpperCase()})`
+    : `DATA PIPELINE: CACHED SYNTHETIC ARCHIVE (DEMO)`;
 
   return (
     <div className="w-full h-screen h-[100dvh] flex flex-col bg-[#070B12] text-white overflow-hidden select-none font-sans">
@@ -78,10 +173,10 @@ export const MissionCommandPage: React.FC<MissionCommandPageProps> = ({
           </span>
         </div>
 
-        {/* Center: Provenance Badge (Distinctly shows synthetic/cached archive) */}
-        <div className="hidden md:flex items-center gap-2 px-3 py-1 rounded-full bg-amber-950/30 border border-amber-500/30 text-[10px] font-mono text-amber-300">
-          <Database className="w-3 h-3 text-amber-400" />
-          <span>DATA PIPELINE: CACHED SYNTHETIC ARCHIVE (DEMO)</span>
+        {/* Center: Real Data Provenance Badge */}
+        <div className="hidden md:flex items-center gap-2 px-3 py-1 rounded-full bg-white/[0.04] border border-white/15 text-[10px] font-mono">
+          <Database className="w-3 h-3 text-cyan-400" />
+          <span className="text-white/80">{provenanceBadge}</span>
         </div>
 
         {/* Right: Operational Controls */}
@@ -94,20 +189,20 @@ export const MissionCommandPage: React.FC<MissionCommandPageProps> = ({
               onChange={(e) => handleScenarioChange(e.target.value)}
               className="bg-transparent text-xs font-mono font-semibold text-cyan-400 focus:outline-none cursor-pointer pr-1"
             >
-              <option value="devgram" className="bg-[#090E17] text-white">Devgram (Chamoli, UK)</option>
-              <option value="wayanad" className="bg-[#090E17] text-white">Chooralmala (Wayanad, KL)</option>
-              <option value="silchar" className="bg-[#090E17] text-white">Silchar (Barak Valley, AS)</option>
-              <option value="chamoli" className="bg-[#090E17] text-white">Joshimath Subsidence (UK)</option>
-              <option value="munambam" className="bg-[#090E17] text-white">Munambam Surge (KL)</option>
+              {presets.map((preset) => (
+                <option key={preset.id} value={preset.id} className="bg-[#090E17] text-white">
+                  {preset.name.length > 28 ? `${preset.name.slice(0, 28)}...` : preset.name}
+                </option>
+              ))}
             </select>
           </div>
 
           {/* Rescan Satellite Telemetry Action */}
           <button
-            onClick={triggerScanAnimation}
+            onClick={() => triggerScanAnimation()}
             disabled={isScanning}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-950/60 border border-cyan-500/40 text-cyan-400 hover:bg-cyan-900/50 text-xs font-mono transition-colors cursor-pointer disabled:opacity-50"
-            title="Execute on-demand orbital telemetry scan"
+            title="Execute on-demand orbital telemetry scan with FastAPI backend"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isScanning ? 'animate-spin' : ''}`} />
             <span className="hidden sm:inline">Rescan Satellite EO</span>
@@ -131,11 +226,11 @@ export const MissionCommandPage: React.FC<MissionCommandPageProps> = ({
         <div className="flex items-center gap-3 shrink-0">
           <span className="flex items-center gap-1.5 text-emerald-400 font-semibold">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            OFFLINE SIMULATION ENGINE: ONLINE
+            {backendHealth ? `BACKEND: ${backendHealth.overall_status.toUpperCase()}` : 'OFFLINE ENGINE: READY'}
           </span>
           <span className="text-white/20">•</span>
           <span className="text-white/80">
-            AOI: <strong className="text-white">{currentScenario.name}</strong>
+            AOI: <strong className="text-white">{currentScenario.name.split(' (')[0]}</strong>
           </span>
           <span className="text-white/20 hidden md:inline">•</span>
           <span className="text-white/60 hidden md:inline">
@@ -144,6 +239,12 @@ export const MissionCommandPage: React.FC<MissionCommandPageProps> = ({
         </div>
 
         <div className="flex items-center gap-3 shrink-0">
+          {apiNotice && (
+            <span className="text-amber-300 text-[11px] hidden xl:flex items-center gap-1">
+              <AlertCircle className="w-3 h-3 text-amber-400" />
+              {apiNotice}
+            </span>
+          )}
           <span className="text-white/50 text-[11px] hidden lg:inline">
             24h Rain: {currentScenario.hazard_summary.rainfall_24h_mm} mm
           </span>
@@ -192,11 +293,12 @@ export const MissionCommandPage: React.FC<MissionCommandPageProps> = ({
               <div className="absolute inset-0 rounded-full border-2 border-dashed border-cyan-400 animate-spin" />
               <Radio className="w-8 h-8 text-cyan-400 animate-pulse" />
             </div>
-            <div className="text-center font-mono space-y-1.5 px-4">
-              <p className="text-xs text-cyan-400 tracking-widest font-bold uppercase animate-pulse">
-                EXECUTING ORBITAL TELEMETRY SCAN
+            <div className="text-center font-mono space-y-1.5 px-4 max-w-lg">
+              <p className="text-xs text-cyan-400 tracking-widest font-bold uppercase animate-pulse flex items-center justify-center gap-1.5">
+                <Activity className="w-3.5 h-3.5" />
+                <span>EXECUTING ORBITAL TELEMETRY & RELOCATION PIPELINE</span>
               </p>
-              <p className="text-xs text-white/80">{scanStep}</p>
+              <p className="text-xs text-white/90 bg-white/5 py-1 px-3 rounded border border-white/10">{scanStep}</p>
             </div>
           </div>
         )}
