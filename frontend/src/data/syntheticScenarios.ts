@@ -818,7 +818,115 @@ export function createScenarioFromGlobalIncident(incident: {
   const isCrit = incident.alert_level === 'critical';
   const defaultPop = incident.default_population && incident.default_population > 0 
     ? incident.default_population 
-    : 1450;
+    : (incident.severity >= 6.0 ? 6800 : 3400);
+
+  const placeLabel = incident.place.split(',')[0].replace(/[^a-zA-Z0-9\s]/g, '').trim() || 'Sector';
+
+  // Dynamic progressive ring candidate generation
+  const site1Cap = Math.max(1200, Math.round(defaultPop * 0.45));
+  const site2Cap = Math.max(2800, Math.round(defaultPop * 0.65));
+  const site3Cap = Math.max(1500, Math.round(defaultPop * 0.50));
+  const site4Cap = Math.max(3200, Math.round(defaultPop * 0.60));
+
+  const alloc1 = 0; // Vetoed
+  const alloc2 = Math.min(defaultPop, site2Cap); // Primary approved
+  const alloc3 = 0; // Vetoed
+  const alloc4 = Math.max(0, defaultPop - alloc2); // Supplementary approved
+
+  const candidateSanctuaries: CandidateSanctuary[] = [
+    {
+      id: `${incident.id}-site-1`,
+      name: `${placeLabel} Northern Sector Relief Ground`,
+      ring: '0-5 km',
+      lat: Number((incident.lat + 0.022).toFixed(6)),
+      lon: Number((incident.lon + 0.018).toFixed(6)),
+      distance_km: 3.2,
+      gross_area_sqm: Math.round(site1Cap * 55),
+      usable_area_sqm: Math.round(site1Cap * 33),
+      sphere_capacity_persons: site1Cap,
+      allocated_population: alloc1,
+      slope_deg: 16.8,
+      status: 'HARD_VETO',
+      veto_reasons: [
+        'Terrain slope 16.8° exceeds 14° safe humanitarian threshold (high landslide/slope instability)',
+        'Inside primary 5km seismic and secondary debris hazard boundary'
+      ],
+      mcda_score: 34.2,
+      infrastructure: {
+        water_tanks: 1,
+        power_backup: 'None (Grid Dependent)',
+        medical_distance_km: 4.8,
+        helipad: false
+      }
+    },
+    {
+      id: `${incident.id}-site-2`,
+      name: `${placeLabel} Regional Education Complex & High Grounds`,
+      ring: '5-10 km',
+      lat: Number((incident.lat - 0.042).toFixed(6)),
+      lon: Number((incident.lon + 0.038).toFixed(6)),
+      distance_km: 6.8,
+      gross_area_sqm: Math.round(site2Cap * 75),
+      usable_area_sqm: Math.round(site2Cap * 45),
+      sphere_capacity_persons: site2Cap,
+      allocated_population: alloc2,
+      slope_deg: 4.6,
+      status: 'APPROVED',
+      mcda_score: 89.8,
+      infrastructure: {
+        water_tanks: 6,
+        power_backup: 'Dual Diesel GenSet (72h capacity)',
+        medical_distance_km: 1.8,
+        helipad: true
+      }
+    },
+    {
+      id: `${incident.id}-site-3`,
+      name: `${placeLabel} Valley Agricultural Hub & Lowland Parcel`,
+      ring: '5-10 km',
+      lat: Number((incident.lat - 0.032).toFixed(6)),
+      lon: Number((incident.lon - 0.052).toFixed(6)),
+      distance_km: 7.9,
+      gross_area_sqm: Math.round(site3Cap * 60),
+      usable_area_sqm: Math.round(site3Cap * 36),
+      sphere_capacity_persons: site3Cap,
+      allocated_population: alloc3,
+      slope_deg: 1.2,
+      status: 'HARD_VETO',
+      veto_reasons: [
+        'Located in active hydrological alluvial drainage depression (flood/debris surge risk)',
+        'Deficient soil bearing capacity for heavy shelter superstructures'
+      ],
+      mcda_score: 28.5,
+      infrastructure: {
+        water_tanks: 0,
+        power_backup: 'None',
+        medical_distance_km: 6.2,
+        helipad: false
+      }
+    },
+    {
+      id: `${incident.id}-site-4`,
+      name: `${placeLabel} Municipal Sports Stadium & Elevated Sanctuary`,
+      ring: '10-15 km',
+      lat: Number((incident.lat + 0.078).toFixed(6)),
+      lon: Number((incident.lon - 0.065).toFixed(6)),
+      distance_km: 12.4,
+      gross_area_sqm: Math.round(site4Cap * 80),
+      usable_area_sqm: Math.round(site4Cap * 48),
+      sphere_capacity_persons: site4Cap,
+      allocated_population: alloc4,
+      slope_deg: 5.8,
+      status: 'APPROVED',
+      mcda_score: 86.4,
+      infrastructure: {
+        water_tanks: 8,
+        power_backup: 'Dedicated Municipal Substation + Solar Microgrid',
+        medical_distance_km: 2.4,
+        helipad: true
+      }
+    }
+  ];
 
   return {
     id: incident.id,
@@ -827,14 +935,14 @@ export function createScenarioFromGlobalIncident(incident: {
     centroid: { lat: incident.lat, lon: incident.lon },
     hazard_type: incident.hazard_type,
     displaced_population: defaultPop,
-    planning_window_mins: isCrit ? 45 : 90,
-    primary_route_name: 'Identified Regional Evacuation Arterial',
+    planning_window_mins: isCrit ? 60 : 120,
+    primary_route_name: `${placeLabel} Primary Evacuation Highway Corridor`,
     hazard_summary: {
       severity: isCrit ? 'CRITICAL' : 'HIGH',
       rainfall_24h_mm: 68,
-      cloudburst_intensity: isCrit ? 'High Risk Sector' : 'Moderate Sector',
+      cloudburst_intensity: isCrit ? 'Severe Hazard Sector' : 'Elevated Hazard Sector',
       soil_saturation_pct: 72,
-      computed_hazard_index: incident.severity || 0.75,
+      computed_hazard_index: incident.severity >= 6.0 ? 0.92 : (incident.severity >= 5.0 ? 0.78 : 0.65),
       flow_vector: { bearing_deg: 165, speed_mps: 1.8 }
     },
     satellite_telemetry: {
@@ -862,11 +970,11 @@ export function createScenarioFromGlobalIncident(incident: {
         gsd_ms_m: 1.12,
         structural_footprint_density_pct: 42,
         unblocked_open_ground_sqm: 14500,
-        helipad_clearance_45m: 'PENDING_REGIONAL_RADAR_SURVEY'
+        helipad_clearance_45m: 'CERTIFIED_CLEAR'
       },
       isro_bhuvan: {
-        lulc_classification: 'Global Sector / Natural Terrain',
-        historical_disaster_tier: isCrit ? 'Tier-1 Immediate Priority' : 'Tier-2 Active Monitoring',
+        lulc_classification: 'Global Geographic Sector / Natural & Settlement Mosaic',
+        historical_disaster_tier: isCrit ? 'Tier-1 Immediate Emergency Response' : 'Tier-2 Active Response',
         drainage_buffer_m: 350
       },
       worldpop: {
@@ -881,31 +989,32 @@ export function createScenarioFromGlobalIncident(incident: {
       max_gradient_pct: 18.2,
       points: [
         { dist_km: 0.0, elevation_m: 120, slope_pct: 4.1, label: 'Centroid Baseline' },
-        { dist_km: 2.5, elevation_m: 230, slope_pct: 8.4, label: 'Ring 1 Valley' },
-        { dist_km: 5.0, elevation_m: 390, slope_pct: 14.1, label: 'Ridge Buffer' },
-        { dist_km: 8.0, elevation_m: 540, slope_pct: 17.5, label: 'Intermediate Ridge' },
-        { dist_km: 12.0, elevation_m: 680, slope_pct: 11.2, label: 'High Plain Plateau' }
+        { dist_km: 2.5, elevation_m: 230, slope_pct: 8.4, label: 'Ring 1 Foothill' },
+        { dist_km: 5.0, elevation_m: 390, slope_pct: 14.1, label: 'Intermediate Ridge' },
+        { dist_km: 8.0, elevation_m: 540, slope_pct: 17.5, label: 'Plateau Slope' },
+        { dist_km: 12.0, elevation_m: 680, slope_pct: 11.2, label: 'Safe Plateau Sanctuary' }
       ]
     },
-    candidate_sanctuaries: [],
+    candidate_sanctuaries: candidateSanctuaries,
     fleet_logistics: {
       total_evacuees: defaultPop,
-      default_fleet_size: Math.max(12, Math.round(defaultPop / 90)),
-      default_bus_capacity: 50,
-      speed_kmh: 30,
-      turnaround_time_mins: 40,
+      default_fleet_size: Math.max(16, Math.round(defaultPop / 65)),
+      default_bus_capacity: 55,
+      speed_kmh: 35,
+      turnaround_time_mins: 45,
       total_cycles_needed: 2,
-      evacuation_clearance_mins: 110,
-      fuel_liters: 320
+      evacuation_clearance_mins: 115,
+      fuel_liters: Math.round(defaultPop * 0.12)
     },
     ddma_directive: {
-      order_no: `INTEL/GLOBAL-INCIDENT/${incident.id.toUpperCase().slice(0, 14)}`,
-      incident_commander: 'RAKSHA Operational Disaster Command',
-      legal_act: 'UN OCHA / Sendai Framework Disaster Protocol',
-      executive_summary: `Sourced global hazard monitoring for ${incident.title} in sector ${incident.place}. Immediate command coordination activated.`,
+      order_no: `INTEL/GLOBAL-EVAC/${incident.id.toUpperCase().slice(0, 14)}`,
+      incident_commander: 'RAKSHA Operational Incident Commander',
+      legal_act: 'UN OCHA / Sendai Disaster Framework Mandate',
+      executive_summary: `Evacuation order executed for ${incident.title} (${incident.place}). Immediate relocation to approved safe candidate sanctuaries activated.`,
       authorized_actions: [
-        'Deploy orbital optical and radar sensors to geodetic centroid.',
-        'Request regional municipal emergency services and logistics mobilization.'
+        `Mobilize transit bus convoys along ${placeLabel} Primary Evacuation Highway Corridor.`,
+        `Establish primary humanitarian Sphere shelter reception at ${placeLabel} Regional Education Complex.`,
+        `Enforce Zero-Tolerance Hard Veto against steep slopes and low-lying drainage parcels.`
       ]
     }
   };
