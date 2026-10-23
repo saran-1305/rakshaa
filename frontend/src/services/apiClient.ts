@@ -412,6 +412,50 @@ class ApiClient {
     }
     return res.json();
   }
+
+  /**
+   * Queries the AI Tactical Commander intelligence brief for live situational directives and what-if stress tests.
+   */
+  public async getTacticalBrief(payload: {
+    scenario_id?: string;
+    scenario_name?: string;
+    hazard_type?: string;
+    displaced_population?: number;
+    planning_window_mins?: number;
+    active_search_radius_km?: number;
+    approved_capacity?: number;
+    weather_hazard_index?: number;
+    corridor_speed_kmh?: number;
+    query?: string;
+    stress_factors?: Record<string, any>;
+  }): Promise<{
+    scenario_id: string;
+    situation_status: string;
+    threat_level: string;
+    effective_hazard_index: number;
+    estimated_clearance_mins: number;
+    planning_window_mins: number;
+    is_within_window: boolean;
+    buffer_mins: number;
+    effective_capacity: number;
+    displaced_population: number;
+    capacity_deficit: number;
+    executive_summary: string[];
+    tactical_actions_matrix: Array<{ agency: string; priority: string; action: string }>;
+    contingency_triggers: Array<{ trigger: string; response: string }>;
+    custom_query_response?: string | null;
+  }> {
+    const res = await this.fetchWithTimeout(`${this.baseUrl}/ai/tactical-brief`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) {
+      throw new Error(`AI Tactical Commander query failed: HTTP ${res.status}`);
+    }
+    return res.json();
+  }
 }
 
 export const apiClient = new ApiClient();
+

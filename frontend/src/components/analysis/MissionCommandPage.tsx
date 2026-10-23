@@ -18,6 +18,7 @@ import { RelocationEngineStudio } from './RelocationEngineStudio';
 import { FleetMobilityDispatcher } from './FleetMobilityDispatcher';
 import { DdmaDirectiveModal } from './DdmaDirectiveModal';
 import { GlobalIntelligenceMap } from '../global/GlobalIntelligenceMap';
+import { AiTacticalCommander } from './AiTacticalCommander';
 import {
   Map,
   Radio,
@@ -29,6 +30,7 @@ import {
   Database,
   Activity,
   AlertCircle,
+  AlertTriangle,
   Globe,
   Play
 } from 'lucide-react';
@@ -69,6 +71,11 @@ export const MissionCommandPage: React.FC<MissionCommandPageProps> = ({
     { id: 'munambam', name: 'Munambam Coastal Surge (KL)', lat: 10.1792, lon: 76.1738, hazard_type: 'Coastal Storm Surge & Sea Ingress', default_population: 3500, description: '' }
   ]);
   const [liveAnalysis, setLiveAnalysis] = useState<BackendAnalysisResponse | null>(null);
+  const [stressFactors, setStressFactors] = useState<{ rainShockPct: number; corridorBlocked: boolean; fleetReductionPct: number }>({
+    rainShockPct: 0,
+    corridorBlocked: false,
+    fleetReductionPct: 0
+  });
 
   // Probe backend health & presets on mount
   useEffect(() => {
@@ -368,6 +375,12 @@ export const MissionCommandPage: React.FC<MissionCommandPageProps> = ({
         )}
 
         <div className="flex items-center gap-3 shrink-0">
+          {stressFactors && (stressFactors.rainShockPct > 0 || stressFactors.corridorBlocked || stressFactors.fleetReductionPct > 0) && (
+            <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-1 animate-pulse">
+              <AlertTriangle className="w-3 h-3 text-amber-400" />
+              STRESS TEST: {stressFactors.rainShockPct > 0 ? `+${stressFactors.rainShockPct}% RAIN ` : ''}{stressFactors.corridorBlocked ? 'ROUTE BLOCKED ' : ''}{stressFactors.fleetReductionPct > 0 ? `-${stressFactors.fleetReductionPct}% FLEET` : ''}
+            </span>
+          )}
           {apiNotice && (
             <span className="text-amber-300 text-[11px] hidden xl:flex items-center gap-1">
               <AlertCircle className="w-3 h-3 text-amber-400" />
@@ -485,6 +498,22 @@ export const MissionCommandPage: React.FC<MissionCommandPageProps> = ({
               <DdmaDirectiveModal scenario={currentScenario} />
             </div>
           </div>
+        )}
+
+        {/* Floating AI Tactical Commander Intelligence Hub (Available on all workspace tabs) */}
+        {activeTab !== 'global' && (
+          <AiTacticalCommander
+            scenarioId={currentScenario.id}
+            scenarioName={currentScenario.name}
+            hazardType={currentScenario.hazard_type}
+            displacedPopulation={currentScenario.displaced_population}
+            planningWindowMins={currentScenario.planning_window_mins}
+            activeSearchRadiusKm={liveAnalysis?.relocation_decision?.final_search_radius_km || 10.0}
+            approvedCapacity={liveAnalysis?.relocation_decision?.approved_capacity || 1040}
+            weatherHazardIndex={currentScenario.hazard_summary.computed_hazard_index}
+            corridorSpeedKmh={currentScenario.fleet_logistics.speed_kmh}
+            onApplyStressFactors={setStressFactors}
+          />
         )}
       </main>
     </div>

@@ -119,8 +119,144 @@ export const FleetMobilityDispatcher: React.FC<FleetMobilityDispatcherProps> = (
         vehicle_hours: Math.round((alloc.corridor_clearance_mins / 60) * alloc.buses_assigned)
       }));
 
+  // Live Convoy Dispatch Simulation Engine
+  const [isSimulating, setIsSimulating] = useState<boolean>(false);
+  const [simMinutes, setSimMinutes] = useState<number>(0);
+  const [simSpeed, setSimSpeed] = useState<number>(5); // 1x, 5x, 15x
+
+  useEffect(() => {
+    let interval: any = null;
+    if (isSimulating) {
+      interval = setInterval(() => {
+        setSimMinutes((prev) => {
+          if (prev >= maxClearanceTime) {
+            setIsSimulating(false);
+            return maxClearanceTime;
+          }
+          return prev + 1;
+        });
+      }, 1000 / simSpeed);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isSimulating, simSpeed, maxClearanceTime]);
+
+  const simProgressPct = Math.min(100, Math.round((simMinutes / Math.max(1, maxClearanceTime)) * 100));
+  const evacueesDelivered = Math.min(population, Math.round(population * (simProgressPct / 100)));
+  const isSimulationFinished = simMinutes >= maxClearanceTime && maxClearanceTime > 0;
+
   return (
     <div className="space-y-6">
+      {/* Live Convoy Dispatch Simulator Console */}
+      <div className="p-5 rounded-xl bg-gradient-to-r from-stone-950 via-slate-900 to-black border border-cyan-500/30 shadow-2xl relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-96 h-96 bg-cyan-500/5 rounded-full blur-3xl pointer-events-none" />
+
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-white/10 pb-4">
+          <div>
+            <div className="flex items-center gap-2 text-cyan-400 font-mono text-xs uppercase tracking-wider">
+              <span className={`w-2.5 h-2.5 rounded-full ${isSimulating ? 'bg-cyan-400 animate-ping' : isSimulationFinished ? 'bg-emerald-400' : 'bg-white/40'}`} />
+              LIVE CONVOY DISPATCH & CORRIDOR TRANSIT SIMULATOR
+            </div>
+            <h3 className="text-base font-bold text-white mt-1">
+              {isSimulating ? 'Convoy Packets In Active Transit' : isSimulationFinished ? 'Mission Evacuation Completed' : 'Simulate Real-Time Fleet Evacuation Run'}
+            </h3>
+            <p className="text-xs text-white/60 font-mono mt-0.5">
+              Corridor: <span className="text-white font-sans">{scenario.primary_route_name}</span> • Target: {population.toLocaleString()} Evacuees
+            </p>
+          </div>
+
+          {/* Simulator Action Controls */}
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <button
+              onClick={() => setIsSimulating(!isSimulating)}
+              disabled={isSimulationFinished}
+              className={`px-4 py-2 rounded-lg font-bold text-xs flex items-center gap-2 transition-all shadow-lg ${
+                isSimulating
+                  ? 'bg-amber-500 hover:bg-amber-400 text-black shadow-amber-500/20'
+                  : 'bg-cyan-500 hover:bg-cyan-400 text-black shadow-cyan-500/30'
+              } disabled:opacity-50`}
+            >
+              {isSimulating ? '⏸ PAUSE CONVOY' : isSimulationFinished ? '✓ MISSION COMPLETE' : '▶ LAUNCH CONVOY DISPATCH'}
+            </button>
+
+            <button
+              onClick={() => {
+                setIsSimulating(false);
+                setSimMinutes(0);
+              }}
+              className="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/15 text-white/80 font-mono text-xs border border-white/10 transition-colors"
+            >
+              RESET
+            </button>
+
+            {/* Speed Multiplier */}
+            <div className="flex rounded-lg bg-black/60 border border-white/10 p-0.5 font-mono text-xs">
+              {[1, 5, 15].map((spd) => (
+                <button
+                  key={spd}
+                  onClick={() => setSimSpeed(spd)}
+                  className={`px-2.5 py-1 rounded transition-colors ${
+                    simSpeed === spd ? 'bg-cyan-500 text-black font-bold' : 'text-white/60 hover:text-white'
+                  }`}
+                >
+                  {spd}x
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Live Simulation Progress Gauges */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-4">
+          <div className="p-3.5 rounded-lg bg-white/5 border border-white/10 font-mono">
+            <div className="text-[10px] text-white/50 uppercase">ELAPSED MISSION TIME</div>
+            <div className="text-xl font-bold text-white mt-1">
+              {Math.floor(simMinutes / 60)}h {simMinutes % 60}m{' '}
+              <span className="text-xs text-white/40 font-normal">/ {Math.floor(maxClearanceTime / 60)}h {maxClearanceTime % 60}m</span>
+            </div>
+            <div className="text-[11px] text-white/60 mt-1">
+              Window: {scenario.planning_window_mins}m statutory limit
+            </div>
+          </div>
+
+          <div className="p-3.5 rounded-lg bg-white/5 border border-white/10 font-mono">
+            <div className="text-[10px] text-white/50 uppercase">EVACUEES SAFELY RELOCATED</div>
+            <div className="text-xl font-bold text-emerald-400 mt-1">
+              {evacueesDelivered.toLocaleString()}{' '}
+              <span className="text-xs text-white/50 font-normal">/ {population.toLocaleString()} PAX</span>
+            </div>
+            <div className="text-[11px] text-emerald-400/80 mt-1">
+              {simProgressPct}% of population secured
+            </div>
+          </div>
+
+          <div className="p-3.5 rounded-lg bg-white/5 border border-white/10 font-mono">
+            <div className="text-[10px] text-white/50 uppercase">TRANSIT CONVOY VELOCITY</div>
+            <div className="text-xl font-bold text-cyan-400 mt-1">
+              {speedKmh} km/h <span className="text-xs text-white/50 font-normal">(ESCORT PROTOCOL)</span>
+            </div>
+            <div className="text-[11px] text-white/60 mt-1">
+              Active Packets: {fleetSize} Buses Mobilized
+            </div>
+          </div>
+        </div>
+
+        {/* Animated Progress Bar */}
+        <div className="mt-4 space-y-1.5">
+          <div className="flex justify-between text-xs font-mono">
+            <span className="text-white/60">Overall Evacuation Progress:</span>
+            <span className="text-cyan-400 font-bold">{simProgressPct}% Completed</span>
+          </div>
+          <div className="w-full h-3 bg-white/10 rounded-full overflow-hidden p-0.5">
+            <div
+              className="h-full bg-gradient-to-r from-cyan-500 via-emerald-400 to-cyan-300 rounded-full transition-all duration-300"
+              style={{ width: `${simProgressPct}%` }}
+            />
+          </div>
+        </div>
+      </div>
+
       {/* Interactive Controls Panel */}
       <div className="p-5 rounded-xl bg-black/60 border border-white/10 space-y-5">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 pb-3">
@@ -295,23 +431,54 @@ export const FleetMobilityDispatcher: React.FC<FleetMobilityDispatcherProps> = (
                 <th className="pb-3 font-medium">DISTANCE</th>
                 <th className="pb-3 font-medium">ALLOCATED COHORT</th>
                 <th className="pb-3 font-medium">LOAD TRIPS REQUIRED</th>
-                <th className="pb-3 font-medium">ESTIMATED VEHICLE HOURS</th>
-                <th className="pb-3 font-medium text-right">CORRIDOR CYCLE</th>
+                <th className="pb-3 font-medium">CORRIDOR CYCLE</th>
+                <th className="pb-3 font-medium text-right">CONVOY SIMULATION TRANSIT</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
-              {siteRows.map((site) => (
-                <tr key={site.site_id} className="hover:bg-white/5 transition-colors">
-                  <td className="py-3 font-sans font-medium text-white">{site.site_name}</td>
-                  <td className="py-3 text-white/70">{site.distance_km} km</td>
-                  <td className="py-3 text-cyan-400 font-bold">{site.allocated_population.toLocaleString()} Evacuees</td>
-                  <td className="py-3 text-emerald-400 font-bold">{site.loads_required} Vehicle Loads</td>
-                  <td className="py-3 text-white/70">{site.vehicle_hours} Veh-Hours</td>
-                  <td className="py-3 text-right font-bold text-white">
-                    {site.clearance_mins} Mins
-                  </td>
-                </tr>
-              ))}
+              {siteRows.map((site) => {
+                const siteProgressPct = Math.min(100, Math.round((simMinutes / Math.max(1, site.clearance_mins)) * 100));
+                const siteDelivered = Math.min(site.allocated_population, Math.round(site.allocated_population * (siteProgressPct / 100)));
+                const isSiteComplete = siteProgressPct >= 100;
+
+                return (
+                  <tr key={site.site_id} className="hover:bg-white/5 transition-colors">
+                    <td className="py-3 font-sans font-medium text-white">
+                      <div>{site.site_name}</div>
+                      <div className="text-[10px] text-white/50 font-mono mt-0.5">
+                        {site.vehicle_hours} Estimated Veh-Hours
+                      </div>
+                    </td>
+                    <td className="py-3 text-white/70">{site.distance_km} km</td>
+                    <td className="py-3 text-cyan-400 font-bold">{site.allocated_population.toLocaleString()} Evacuees</td>
+                    <td className="py-3 text-emerald-400 font-bold">{site.loads_required} Loads</td>
+                    <td className="py-3 font-bold text-white">{site.clearance_mins} Mins</td>
+                    <td className="py-3 text-right">
+                      <div className="flex flex-col items-end gap-1">
+                        <div className="flex items-center gap-1.5 text-[11px]">
+                          {isSiteComplete ? (
+                            <span className="text-emerald-400 font-bold">✓ DELIVERED ({siteDelivered.toLocaleString()} PAX)</span>
+                          ) : isSimulating ? (
+                            <span className="text-cyan-300 animate-pulse font-mono font-bold">
+                              🚌 IN TRANSIT ({siteDelivered.toLocaleString()} / {site.allocated_population.toLocaleString()})
+                            </span>
+                          ) : (
+                            <span className="text-white/40 font-mono">STANDBY AT HUB</span>
+                          )}
+                        </div>
+                        <div className="w-32 h-1.5 bg-white/10 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full transition-all duration-300 ${
+                              isSiteComplete ? 'bg-emerald-400' : 'bg-cyan-400'
+                            }`}
+                            style={{ width: `${siteProgressPct}%` }}
+                          />
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

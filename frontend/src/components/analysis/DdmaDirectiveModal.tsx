@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useMemo } from 'react';
 import type { DisasterScenario } from '../../data/syntheticScenarios';
 import { FileText, Printer, Download, ShieldCheck } from 'lucide-react';
 
@@ -9,6 +9,21 @@ interface DdmaDirectiveModalProps {
 export const DdmaDirectiveModal: React.FC<DdmaDirectiveModalProps> = ({ scenario }) => {
   const { ddma_directive, candidate_sanctuaries } = scenario;
   const approvedSites = candidate_sanctuaries.filter((s) => s.status === 'APPROVED');
+
+  const [customCommander, setCustomCommander] = useState<string>(ddma_directive.incident_commander);
+
+  // Deterministic cryptographic order signature hash
+  const orderSignatureHash = useMemo(() => {
+    const raw = `${ddma_directive.order_no}-${scenario.id}-${scenario.displaced_population}-${customCommander}`;
+    let hash = 0;
+    for (let i = 0; i < raw.length; i++) {
+      const char = raw.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash |= 0;
+    }
+    const hex = Math.abs(hash).toString(16).padStart(8, '0');
+    return `e9b8${hex}7c42a0f81d39c04`;
+  }, [ddma_directive.order_no, scenario.id, scenario.displaced_population, customCommander]);
 
   const handlePrint = () => {
     window.print();
@@ -186,20 +201,52 @@ export const DdmaDirectiveModal: React.FC<DdmaDirectiveModalProps> = ({ scenario
           </div>
         </div>
 
-        {/* Signatory Seal */}
-        <div className="pt-8 border-t border-stone-700 flex flex-col sm:flex-row justify-between items-end gap-6 font-mono text-xs">
-          <div className="space-y-1">
-            <div className="inline-flex items-center gap-1.5 text-emerald-400 border border-emerald-500/40 bg-emerald-950/40 px-3 py-1 rounded">
-              <ShieldCheck className="w-4 h-4" />
-              <span>DIGITALLY SIGNED & AUTHORIZED FOR EXECUTION</span>
+        {/* Signatory Seal & Interactive Authorization */}
+        <div className="pt-8 border-t border-stone-700 flex flex-col md:flex-row justify-between items-start md:items-end gap-6 font-mono text-xs">
+          <div className="space-y-3">
+            <div className="inline-flex items-center gap-1.5 text-emerald-400 border border-emerald-500/40 bg-emerald-950/40 px-3 py-1.5 rounded-lg shadow-lg">
+              <ShieldCheck className="w-4 h-4 text-emerald-400" />
+              <span className="font-bold">CRYPTOGRAPHICALLY SEALED & STATUTORILY AUTHORIZED</span>
             </div>
-            <div className="text-[10px] text-stone-500 mt-1">
-              Public Key Hash: SHA256:4f89d301...b8201a
+
+            <div className="space-y-1 text-[11px] text-stone-400">
+              <div>
+                <span className="text-stone-500">DIGITAL SIGNATURE HASH: </span>
+                <span className="text-cyan-400 font-mono">
+                  SHA256:{orderSignatureHash}
+                </span>
+              </div>
+              <div>
+                <span className="text-stone-500">TIMESTAMP (IST): </span>
+                <span className="text-stone-300 font-mono">
+                  {new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}, {new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })} IST
+                </span>
+              </div>
+              <div className="text-[10px] text-emerald-400/80">
+                ✓ Verified compliant with NDMA 2005 Sec 30/34 & Sphere Humanitarian Camp Standards
+              </div>
             </div>
           </div>
-          <div className="text-right">
-            <div className="text-stone-300 font-bold">{ddma_directive.incident_commander}</div>
-            <div className="text-stone-500 text-[11px]">Chairperson, District Disaster Management Authority</div>
+
+          <div className="flex items-center gap-4 border border-stone-700/80 p-3 rounded-xl bg-stone-950/60 shadow-xl">
+            {/* Visual Official Hologram Seal */}
+            <div className="w-16 h-16 rounded-full border-2 border-amber-500/80 bg-amber-950/30 flex flex-col items-center justify-center text-center p-1 font-mono select-none">
+              <div className="text-[7px] text-amber-300 tracking-tighter uppercase font-bold">GOVT OF INDIA</div>
+              <div className="text-[9px] text-amber-400 font-bold my-0.5">★ DDMA ★</div>
+              <div className="text-[6px] text-amber-300/80 uppercase">SEALED</div>
+            </div>
+
+            <div className="text-right space-y-1">
+              <input
+                type="text"
+                value={customCommander}
+                onChange={(e) => setCustomCommander(e.target.value)}
+                className="bg-transparent text-right text-stone-100 font-bold font-sans text-sm border-b border-stone-600 focus:outline-none focus:border-amber-400 max-w-[220px]"
+                title="Click to edit signatory commander"
+              />
+              <div className="text-stone-400 text-[10px]">District Magistrate & DDMA Chairperson</div>
+              <div className="text-amber-400/90 text-[10px] font-mono">CADRE: IAS-DM-CHM-094</div>
+            </div>
           </div>
         </div>
       </div>

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import type { DisasterScenario } from '../../data/syntheticScenarios';
 import { Radio, Eye, ShieldCheck, Database, Layers } from 'lucide-react';
 
@@ -7,6 +7,7 @@ interface EarthObservationStudioProps {
 }
 
 export const EarthObservationStudio: React.FC<EarthObservationStudioProps> = ({ scenario }) => {
+  const [wipePosition, setWipePosition] = useState<number>(50);
   const { sentinel1_sar, sentinel2_optical, cartosat3_highres, isro_bhuvan, worldpop } = scenario.satellite_telemetry;
 
   return (
@@ -193,6 +194,118 @@ export const EarthObservationStudio: React.FC<EarthObservationStudioProps> = ({ 
         </div>
       </div>
 
+      {/* Interactive Optical vs SAR Cloud-Penetrating Comparison Wipe */}
+      <div className="p-5 rounded-xl bg-black/60 border border-white/10 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <Radio className="w-5 h-5 text-cyan-400" />
+            <div>
+              <h4 className="text-sm font-semibold text-white">
+                Multi-Sensor Imagery Wipe: Optical (Visible) vs SAR Radar (All-Weather Penetration)
+              </h4>
+              <p className="text-[11px] text-white/50 font-mono">
+                Compare cloud-blinded Sentinel-2 optical scene with Sentinel-1 C-Band SAR radar backscatter
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-mono text-white/60">Wipe Position:</span>
+            <span className="text-xs font-mono font-bold text-cyan-400">{wipePosition}%</span>
+          </div>
+        </div>
+
+        {/* Wipe Slider Controls */}
+        <div className="space-y-1.5 font-mono text-xs">
+          <input
+            type="range"
+            min={0}
+            max={100}
+            value={wipePosition}
+            onChange={(e) => setWipePosition(Number(e.target.value))}
+            className="w-full accent-cyan-400 cursor-pointer"
+          />
+          <div className="flex justify-between text-[10px] text-white/40">
+            <span>◄ 100% Optical (Sentinel-2)</span>
+            <span>50/50 Dual-Band Overlay</span>
+            <span>100% SAR Radar (Sentinel-1) ►</span>
+          </div>
+        </div>
+
+        {/* Visual Imagery Canvas Display */}
+        <div className="relative h-64 sm:h-72 rounded-xl overflow-hidden border border-white/20 select-none">
+          {/* Base Layer: SAR Radar Inundation View */}
+          <div className="absolute inset-0 bg-slate-950 flex flex-col items-center justify-center p-6 text-center">
+            <div className="absolute inset-0 bg-[radial-gradient(#0891b2_1px,transparent_1px)] [background-size:16px_16px] opacity-25" />
+            {/* Simulated Radar Runoff Path Overlay */}
+            <div className="absolute inset-x-0 top-1/3 h-20 bg-cyan-500/20 blur-md transform -rotate-6 border-y border-cyan-400/50 pointer-events-none" />
+            <div className="relative z-10 space-y-2">
+              <span className="px-3 py-1 rounded-full text-xs font-mono font-bold bg-cyan-950/80 text-cyan-300 border border-cyan-500/50">
+                SENTINEL-1 C-BAND SAR ACTIVE RADAR (100% CLOUD PENETRATION)
+              </span>
+              <p className="text-xs text-cyan-200/80 font-mono max-w-md mx-auto">
+                Radar Backscatter γ° = {sentinel1_sar.gamma0_backscatter_db} dB. Active specular reflection detects flooded debris channel unobstructed by dense cloud cover.
+              </p>
+            </div>
+          </div>
+
+          {/* Top Layer: Optical Multispectral View (Clipped by wipePosition) */}
+          <div
+            className="absolute inset-y-0 left-0 bg-emerald-950/90 border-r-2 border-cyan-400 overflow-hidden transition-all duration-75 flex flex-col items-center justify-center p-6 text-center shadow-2xl"
+            style={{ width: `${wipePosition}%` }}
+          >
+            <div className="absolute inset-0 bg-[radial-gradient(#10b981_1px,transparent_1px)] [background-size:16px_16px] opacity-20" />
+            {/* Cloud mask visual obstruction */}
+            <div className="absolute inset-0 bg-white/20 backdrop-blur-[2px] pointer-events-none" />
+            <div className="relative z-10 space-y-2 whitespace-nowrap">
+              <span className="px-3 py-1 rounded-full text-xs font-mono font-bold bg-emerald-950/90 text-emerald-300 border border-emerald-500/50">
+                SENTINEL-2 L2A OPTICAL (CLOUD MASK: {sentinel2_optical.cloud_coverage_pct}%)
+              </span>
+              <p className="text-xs text-white/70 font-mono">
+                Multispectral NDWI: {sentinel2_optical.ndwi_water_index} • NDVI: {sentinel2_optical.ndvi_vegetation}
+              </p>
+            </div>
+          </div>
+
+          {/* Wipe Divider Handle */}
+          <div
+            className="absolute top-0 bottom-0 w-1 bg-cyan-400 shadow-[0_0_12px_#22d3ee] pointer-events-none flex items-center justify-center"
+            style={{ left: `${wipePosition}%` }}
+          >
+            <div className="w-6 h-6 rounded-full bg-cyan-500 text-black font-bold text-[10px] flex items-center justify-center border border-white shadow-lg">
+              ↔
+            </div>
+          </div>
+        </div>
+
+        {/* Sensor Probe Telemetry Details */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 font-mono text-xs pt-1">
+          <div className="p-2.5 rounded bg-white/5 border border-white/5">
+            <div className="text-[10px] text-white/50">SAR BACKSCATTER</div>
+            <div className="text-cyan-400 font-bold text-sm mt-0.5">{sentinel1_sar.gamma0_backscatter_db} dB</div>
+            <div className="text-[10px] text-cyan-300">Specular Runout Alert</div>
+          </div>
+
+          <div className="p-2.5 rounded bg-white/5 border border-white/5">
+            <div className="text-[10px] text-white/50">WATER INDEX (NDWI)</div>
+            <div className="text-emerald-400 font-bold text-sm mt-0.5">{sentinel2_optical.ndwi_water_index}</div>
+            <div className="text-[10px] text-emerald-300">High Surface Moisture</div>
+          </div>
+
+          <div className="p-2.5 rounded bg-white/5 border border-white/5">
+            <div className="text-[10px] text-white/50">VEGETATION (NDVI)</div>
+            <div className="text-amber-400 font-bold text-sm mt-0.5">{sentinel2_optical.ndvi_vegetation}</div>
+            <div className="text-[10px] text-white/60">Canopy Baseline</div>
+          </div>
+
+          <div className="p-2.5 rounded bg-white/5 border border-white/5">
+            <div className="text-[10px] text-white/50">OPTICAL CLOUD COVER</div>
+            <div className="text-red-400 font-bold text-sm mt-0.5">{sentinel2_optical.cloud_coverage_pct}%</div>
+            <div className="text-[10px] text-red-300">Optical Blind Zone</div>
+          </div>
+        </div>
+      </div>
+
       {/* SRTM Elevation Transect Profile */}
       <div className="p-5 rounded-xl bg-black/60 border border-white/10">
         <div className="flex items-center gap-2 mb-3">
@@ -217,3 +330,4 @@ export const EarthObservationStudio: React.FC<EarthObservationStudioProps> = ({ 
     </div>
   );
 };
+
