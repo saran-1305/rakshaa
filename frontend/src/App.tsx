@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import Lenis from 'lenis';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
@@ -6,13 +7,22 @@ import { HeroSection } from './components/hero/HeroSection';
 import { WhySection } from './components/why/WhySection';
 import { DataSection } from './components/ecosystem/DataSection';
 import { RainBackground } from './components/hero/RainBackground';
-import { MissionCommandModal } from './components/analysis/MissionCommandModal';
+import { MissionCommandPage } from './components/analysis/MissionCommandPage';
 import { Radio } from 'lucide-react';
 
 gsap.registerPlugin(ScrollTrigger);
 
-function App() {
-  const [isMissionModalOpen, setIsMissionModalOpen] = useState(false);
+/**
+ * LandingPage component:
+ * Preserves the full cinematic landing experience, Lenis smooth scrolling,
+ * and passes navigation handlers to launch the full-screen Command Center.
+ */
+function LandingPage() {
+  const navigate = useNavigate();
+
+  const handleOpenCommand = () => {
+    navigate('/command-center');
+  };
 
   useEffect(() => {
     const lenis = new Lenis({
@@ -27,31 +37,21 @@ function App() {
 
     lenis.on('scroll', ScrollTrigger.update);
 
-    gsap.ticker.add((time) => {
+    const rafHandler = (time: number) => {
       lenis.raf(time * 1000);
-    });
+    };
 
+    gsap.ticker.add(rafHandler);
     gsap.ticker.lagSmoothing(0);
 
     return () => {
       lenis.destroy();
-      gsap.ticker.remove((time) => lenis.raf(time * 1000));
+      gsap.ticker.remove(rafHandler);
     };
   }, []);
 
-  useEffect(() => {
-    if (
-      window.location.pathname === '/overview' ||
-      window.location.pathname === '/dashboard' ||
-      window.location.pathname === '/simulation' ||
-      window.location.hash === '#overview'
-    ) {
-      setIsMissionModalOpen(true);
-    }
-  }, []);
-
   return (
-    <div className="relative w-full min-h-screen font-sans">
+    <div className="relative w-full min-h-screen font-sans bg-black">
       {/* Global Background Layer */}
       <div className="fixed inset-0 bg-black pointer-events-none overflow-hidden" style={{ zIndex: -1 }}>
         {/* Drought Background Image */}
@@ -68,17 +68,18 @@ function App() {
         </div>
       </div>
 
-      {/* Main Content */}
+      {/* Main Content Sections */}
       <div className="relative z-10">
-        <HeroSection onOpenMissionModal={() => setIsMissionModalOpen(true)} />
+        <HeroSection onOpenMissionModal={handleOpenCommand} />
         <WhySection />
-        <DataSection onOpenMissionModal={() => setIsMissionModalOpen(true)} />
+        <DataSection onOpenMissionModal={handleOpenCommand} />
       </div>
 
       {/* Floating Tactical Launch HUD Trigger */}
       <button
-        onClick={() => setIsMissionModalOpen(true)}
+        onClick={handleOpenCommand}
         className="fixed bottom-6 right-6 z-40 flex items-center gap-2.5 px-5 py-3 rounded-full bg-raksha-accent text-raksha-900 font-bold text-xs tracking-wider font-mono shadow-2xl hover:bg-raksha-accentLight transform hover:scale-105 transition-all cursor-pointer border border-cyan-300"
+        aria-label="Open RAKSHA Command Center"
       >
         <span className="relative flex h-2.5 w-2.5">
           <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-raksha-900 opacity-75"></span>
@@ -87,13 +88,34 @@ function App() {
         <Radio className="w-4 h-4 text-raksha-900" />
         <span>ENTER RAKSHA COMMAND</span>
       </button>
-
-      {/* Full-Featured Mission Command Center (Offline Synthetic Prototype) */}
-      <MissionCommandModal
-        isOpen={isMissionModalOpen}
-        onClose={() => setIsMissionModalOpen(false)}
-      />
     </div>
+  );
+}
+
+/**
+ * App:
+ * Standalone SPA routing with dedicated `/command-center` full-screen page,
+ * preserving legacy aliases (`/simulation`, `/overview`, `/dashboard`).
+ */
+function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        {/* Cinematic Landing Page */}
+        <Route path="/" element={<LandingPage />} />
+
+        {/* Full-Screen Standalone Disaster Management Command Center */}
+        <Route path="/command-center" element={<MissionCommandPage />} />
+
+        {/* Legacy / Compatibility Entry Routes */}
+        <Route path="/simulation" element={<Navigate to="/command-center" replace />} />
+        <Route path="/overview" element={<Navigate to="/command-center" replace />} />
+        <Route path="/dashboard" element={<Navigate to="/command-center" replace />} />
+
+        {/* Catch-all fallback to Landing */}
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </BrowserRouter>
   );
 }
 

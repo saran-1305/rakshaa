@@ -70,3 +70,14 @@ html.lenis body {
 .animate-scan-pulse {
   animation: scan-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
+
+/* Print optimizations for DDMA official directive */
+@media print {
+  header, nav, .no-print {
+    display: none !important;
+  }
+  body {
+    background: white !important;
+    color: black !important;
+  }
+}
