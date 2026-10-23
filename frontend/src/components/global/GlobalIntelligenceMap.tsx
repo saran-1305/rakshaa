@@ -102,12 +102,12 @@ export const GlobalIntelligenceMap: React.FC<GlobalIntelligenceMapProps> = ({
 
       L.control.zoom({ position: 'topright' }).addTo(map);
 
-      // Base tile layer: Carto Dark Tactical
+      // Base tile layer: Keyless ESRI Dark Canvas Tactical
       const baseTile = L.tileLayer(
-        'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+        'https://services.arcgisonline.com/arcgis/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
         {
-          maxZoom: 19,
-          subdomains: 'abcd'
+          maxZoom: 16,
+          attribution: 'ESRI Dark Canvas'
         }
       ).addTo(map);
 
@@ -150,15 +150,17 @@ export const GlobalIntelligenceMap: React.FC<GlobalIntelligenceMapProps> = ({
       map.removeLayer(baseLayerRef.current);
     }
 
-    let url = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
-    let maxZoom = 19;
-    let subdomains = 'abcd';
+    let url = 'https://services.arcgisonline.com/arcgis/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}';
+    let maxZoom = 16;
+    let subdomains = '';
 
     if (mapMode === 'satellite') {
       url = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+      maxZoom = 19;
       subdomains = '';
     } else if (mapMode === 'streets') {
       url = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+      maxZoom = 19;
       subdomains = 'abc';
     }
 
