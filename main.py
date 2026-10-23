@@ -4,6 +4,7 @@ FastAPI Web Application & Live Geospatial API Server
 """
 
 import os
+import math
 from typing import Optional, List, Dict, Any
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
@@ -17,6 +18,7 @@ from bhoonidhi_client import bhoonidhi_service
 from bhuvan_client import bhuvan_service
 from worldpop_client import worldpop_service
 from global_events_service import global_events_service
+from groq_client import groq_tactical_service
 
 app = FastAPI(
     title="RAKSHA Disaster Relocation Engine",
@@ -474,46 +476,78 @@ def generate_tactical_brief(req: TacticalBriefRequest):
     est_clearance_mins = round(trips * avg_cycle_mins, 0)
     is_feasible = (est_clearance_mins <= window) and (effective_cap >= pop)
 
-    # Custom Query Answering Logic
+    # Custom Query Answering Logic via Groq AI LPU Inference
     query_answer = None
+    ai_source = "Groq LPU (GPT-OSS-120B)"
     if req.query:
-        q_lower = req.query.lower()
-        if "rain" in q_lower or "precipitation" in q_lower or "cloudburst" in q_lower:
-            query_answer = (
-                f"PRECIPITATION IMPACT ASSESSMENT: Under current soil saturation ({effective_hazard:.2f} index), "
-                f"any rainfall surge of +{rain_shock_pct or 30:.0f}% will accelerate pore-water pressure along slopes > 12°. "
-                f"Concentric search boundary must maintain minimum 3.0 km buffer from primary drainage runout corridors. "
-                f"Convoy speed must be capped at {effective_speed:.0f} km/h with mandatory escorts."
-            )
-        elif "block" in q_lower or "road" in q_lower or "route" in q_lower or "choke" in q_lower:
-            query_answer = (
-                f"CORRIDOR BOTTLENECK DIRECTIVE: If primary corridor is obstructed, system activates secondary "
-                f"highland spurs. Evacuation load transfers automatically to Reserve Sanctuaries. "
-                f"Expect corridor turnaround cycle to inflate from {avg_cycle_mins:.0f}m to {avg_cycle_mins * 1.55:.0f}m. "
-                f"Deploy BRO/PWD earth-clearing JCBs at choke points immediately."
-            )
-        elif "night" in q_lower or "dark" in q_lower or "visibility" in q_lower:
-            query_answer = (
-                "NIGHT EVACUATION PROTOCOL: Low-visibility night convoy movements require high-intensity portable floodlights "
-                "at boarding hubs and sanctuary gates. Bus speeds must be throttled to 20 km/h. Advance pilot vehicles "
-                "equipped with thermal cameras must lead each 5-bus packet."
-            )
-        elif "medical" in q_lower or "triage" in q_lower or "vulnerable" in q_lower:
-            query_answer = (
-                "MEDICAL TRIAGE & ACCESSIBILITY: WorldPop demographic analysis identifies 14% elderly and 8% pediatric "
-                "dependents. Allocate ALS/BLS ambulances with 1:20 patient-to-attendant ratio. Prioritize Wave 1 transport "
-                "for non-ambulatory individuals directly to institutional medical campuses."
-            )
+        incident_context = {
+            "scenario": req.scenario_name,
+            "displaced_population": pop,
+            "hazard_type": req.hazard_type,
+            "effective_hazard_index": round(effective_hazard, 2),
+            "active_search_radius_km": req.active_search_radius_km,
+            "approved_safe_capacity": effective_cap,
+            "planning_window_mins": window,
+            "estimated_clearance_mins": est_clearance_mins,
+            "corridor_speed_kmh": effective_speed,
+            "stress_factors": {
+                "rain_shock_pct": rain_shock_pct,
+                "corridor_blocked": corridor_blocked,
+                "fleet_reduction_pct": fleet_reduction_pct
+            }
+        }
+        
+        # 1. Query live Groq LPU LLM
+        groq_resp = groq_tactical_service.answer_commander_query(req.query, incident_context)
+        if groq_resp:
+            if isinstance(groq_resp, dict):
+                query_answer = groq_resp.get("text")
+                model_name = groq_resp.get("model", "qwen3.8-27b").split("/")[-1].upper()
+                ai_source = f"Groq LPU ({model_name} Live)"
+            else:
+                query_answer = groq_resp
+                ai_source = "Groq LPU (Live)"
         else:
-            query_answer = (
-                f"TACTICAL GUIDANCE FOR '{req.query}': Current mission posture is "
-                f"{'OPTIMAL' if is_feasible else 'HIGH RISK'}. Approved sanctuary capacity is {effective_cap:,} PAX "
-                f"vs {pop:,} evacuees ({round(effective_cap/max(1,pop)*100)}% coverage). "
-                f"Estimated clearance time is {est_clearance_mins:.0f} mins against the {window:.0f}m statutory window."
-            )
+            # Deterministic heuristic fallback if offline
+            ai_source = "Local NDMA Heuristic Engine"
+            q_lower = req.query.lower()
+            if "rain" in q_lower or "precipitation" in q_lower or "cloudburst" in q_lower:
+                query_answer = (
+                    f"PRECIPITATION IMPACT ASSESSMENT: Under current soil saturation ({effective_hazard:.2f} index), "
+                    f"any rainfall surge of +{rain_shock_pct or 30:.0f}% will accelerate pore-water pressure along slopes > 12°. "
+                    f"Concentric search boundary must maintain minimum 3.0 km buffer from primary drainage runout corridors. "
+                    f"Convoy speed must be capped at {effective_speed:.0f} km/h with mandatory escorts."
+                )
+            elif "block" in q_lower or "road" in q_lower or "route" in q_lower or "choke" in q_lower:
+                query_answer = (
+                    f"CORRIDOR BOTTLENECK DIRECTIVE: If primary corridor is obstructed, system activates secondary "
+                    f"highland spurs. Evacuation load transfers automatically to Reserve Sanctuaries. "
+                    f"Expect corridor turnaround cycle to inflate from {avg_cycle_mins:.0f}m to {avg_cycle_mins * 1.55:.0f}m. "
+                    f"Deploy BRO/PWD earth-clearing JCBs at choke points immediately."
+                )
+            elif "night" in q_lower or "dark" in q_lower or "visibility" in q_lower:
+                query_answer = (
+                    "NIGHT EVACUATION PROTOCOL: Low-visibility night convoy movements require high-intensity portable floodlights "
+                    "at boarding hubs and sanctuary gates. Bus speeds must be throttled to 20 km/h. Advance pilot vehicles "
+                    "equipped with thermal cameras must lead each 5-bus packet."
+                )
+            elif "medical" in q_lower or "triage" in q_lower or "vulnerable" in q_lower:
+                query_answer = (
+                    "MEDICAL TRIAGE & ACCESSIBILITY: WorldPop demographic analysis identifies 14% elderly and 8% pediatric "
+                    "dependents. Allocate ALS/BLS ambulances with 1:20 patient-to-attendant ratio. Prioritize Wave 1 transport "
+                    "for non-ambulatory individuals directly to institutional medical campuses."
+                )
+            else:
+                query_answer = (
+                    f"TACTICAL GUIDANCE FOR '{req.query}': Current mission posture is "
+                    f"{'OPTIMAL' if is_feasible else 'HIGH RISK'}. Approved sanctuary capacity is {effective_cap:,} PAX "
+                    f"vs {pop:,} evacuees ({round(effective_cap/max(1,pop)*100)}% coverage). "
+                    f"Estimated clearance time is {est_clearance_mins:.0f} mins against the {window:.0f}m statutory window."
+                )
 
     return {
         "scenario_id": req.scenario_id,
+        "ai_engine": ai_source,
         "situation_status": "CONTROLLED" if is_feasible else "CRITICAL DEFICIT",
         "threat_level": "RED CRITICAL" if effective_hazard > 0.8 else ("ORANGE ELEVATED" if effective_hazard > 0.5 else "YELLOW ADVISORY"),
         "effective_hazard_index": round(effective_hazard, 2),

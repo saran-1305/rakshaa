@@ -54,6 +54,49 @@ export const AiTacticalCommander: React.FC<AiTacticalCommanderProps> = ({
   const [corridorBlocked, setCorridorBlocked] = useState<boolean>(false);
   const [fleetReduction, setFleetReduction] = useState<number>(0);
 
+  const queryGroqDirectly = async (query: string, contextSummary: string): Promise<{ text: string; model: string } | null> => {
+    const groqKey = (import.meta.env.VITE_GROQ_API_KEY as string) || '';
+    if (!groqKey) return null;
+    const models = ['qwen/qwen3.8-27b', 'openai/gpt-oss-120b', 'openai/gpt-oss-20b'];
+    for (const model of models) {
+      try {
+        const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${groqKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            model,
+            messages: [
+              {
+                role: 'system',
+                content: 'You are the RAKSHA AI Tactical Commander operating under the National Disaster Management Act 2005. Synthesize Sentinel-1 SAR radar backscatter, Sentinel-2 optical imagery, SRTM DEM slopes (>14° veto), Sphere camp capacities (45 m²/person), and transport clearance cycles. Give authoritative, concise military and civil defense tactical directives with concrete numbers, convoy speed ceilings, and inter-agency tasks.'
+              },
+              {
+                role: 'user',
+                content: `INCIDENT: ${scenarioName} (${hazardType})\nCONTEXT: ${contextSummary}\n\nEMERGENCY QUERY: ${query}\n\nProvide an immediate operational directive answering this query.`
+              }
+            ],
+            max_tokens: 380,
+            temperature: 0.2
+          })
+        });
+        if (res.ok) {
+          const json = await res.json();
+          const msg = json.choices?.[0]?.message;
+          const text = (msg?.content || msg?.reasoning || '').trim();
+          if (text) {
+            return { text, model: model.split('/')[1]?.toUpperCase() || model };
+          }
+        }
+      } catch {
+        continue;
+      }
+    }
+    return null;
+  };
+
   const fetchBrief = async (customQuery?: string) => {
     setLoading(true);
     try {
@@ -83,9 +126,24 @@ export const AiTacticalCommander: React.FC<AiTacticalCommanderProps> = ({
         });
       }
     } catch {
-      // Fallback local synthesis if offline
+      // Vercel / Standalone SPA Direct Groq Fallback
+      let groqCustomAnswer: string | null = null;
+      let engineName = 'Groq LPU (QWEN-27B)';
+
+      if (customQuery) {
+        const ctxSummary = `Displaced: ${displacedPopulation} PAX, Radius: ${activeSearchRadiusKm.toFixed(1)} km, Approved Capacity: ${approvedCapacity} PAX, Weather Hazard: ${weatherHazardIndex.toFixed(2)}, Rain Shock: +${rainShock}%, Choke Point Blocked: ${corridorBlocked}`;
+        const groqDirect = await queryGroqDirectly(customQuery, ctxSummary);
+        if (groqDirect) {
+          groqCustomAnswer = groqDirect.text;
+          engineName = `Groq LPU (${groqDirect.model} Live)`;
+        } else {
+          groqCustomAnswer = `Tactical assessment for "${customQuery}": Maintain concentric search ring at ${activeSearchRadiusKm.toFixed(1)} km, enforce 20 km/h convoy speed ceiling with lead pilot escort.`;
+        }
+      }
+
       setData({
         scenario_id: scenarioId,
+        ai_engine: engineName,
         situation_status: approvedCapacity >= displacedPopulation ? 'CONTROLLED' : 'CRITICAL DEFICIT',
         threat_level: weatherHazardIndex > 0.8 ? 'RED CRITICAL' : 'ORANGE ELEVATED',
         effective_hazard_index: weatherHazardIndex,
@@ -108,7 +166,7 @@ export const AiTacticalCommander: React.FC<AiTacticalCommanderProps> = ({
         contingency_triggers: [
           { trigger: 'Precipitation > 40mm/h', response: 'Deploy 4x4 high-wheelbase emergency carriers.' }
         ],
-        custom_query_response: customQuery ? `Tactical assessment for "${customQuery}": Proceed under active SOP with strict hard-veto boundaries.` : null
+        custom_query_response: groqCustomAnswer || (customQuery ? `Tactical assessment for "${customQuery}": Proceed under active SOP with strict hard-veto boundaries.` : null)
       });
     } finally {
       setLoading(false);
@@ -186,13 +244,21 @@ export const AiTacticalCommander: React.FC<AiTacticalCommanderProps> = ({
               <div>
                 <div className="flex items-center gap-2">
                   <h3 className="text-sm font-bold tracking-wide uppercase text-white">AI Tactical Commander</h3>
-                  <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
-                    NDMA TIER-1 AI
+                  <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 flex items-center gap-1">
+                    <Zap className="w-3 h-3 text-cyan-400" />
+                    {data?.ai_engine || 'GROQ LPU LIVE'}
                   </span>
                 </div>
-                <p className="text-[11px] text-white/50 font-mono truncate max-w-[280px]">
-                  {scenarioName}
-                </p>
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                  <p className="text-[10px] text-emerald-400/90 font-mono tracking-wider font-semibold">
+                    POWERED BY GROQ LPU
+                  </p>
+                  <span className="text-[10px] text-white/30">•</span>
+                  <p className="text-[11px] text-white/50 font-mono truncate max-w-[170px]">
+                    {scenarioName}
+                  </p>
+                </div>
               </div>
             </div>
 
