@@ -463,7 +463,7 @@ export const MissionCommandPage: React.FC<MissionCommandPageProps> = ({
 
         {/* Tab 2: EO Telemetry Studio */}
         {activeTab === 'eo' && (
-          <div className="w-full h-full overflow-y-auto min-h-0 p-4 lg:p-6">
+          <div className="w-full h-full overflow-y-auto min-h-0 p-4 lg:p-6 pb-28">
             <div className="max-w-7xl mx-auto">
               <EarthObservationStudio scenario={currentScenario} />
             </div>
@@ -472,7 +472,7 @@ export const MissionCommandPage: React.FC<MissionCommandPageProps> = ({
 
         {/* Tab 3: Relocation Engine & Hard Veto */}
         {activeTab === 'relocation' && (
-          <div className="w-full h-full overflow-y-auto min-h-0 p-4 lg:p-6">
+          <div className="w-full h-full overflow-y-auto min-h-0 p-4 lg:p-6 pb-28">
             <div className="max-w-7xl mx-auto">
               <RelocationEngineStudio 
                 scenario={currentScenario} 
@@ -484,7 +484,7 @@ export const MissionCommandPage: React.FC<MissionCommandPageProps> = ({
 
         {/* Tab 4: Fleet Logistics Dispatch */}
         {activeTab === 'fleet' && (
-          <div className="w-full h-full overflow-y-auto min-h-0 p-4 lg:p-6">
+          <div className="w-full h-full overflow-y-auto min-h-0 p-4 lg:p-6 pb-28">
             <div className="max-w-7xl mx-auto">
               <FleetMobilityDispatcher scenario={currentScenario} />
             </div>
@@ -493,7 +493,7 @@ export const MissionCommandPage: React.FC<MissionCommandPageProps> = ({
 
         {/* Tab 5: DDMA Legal Directive */}
         {activeTab === 'ddma' && (
-          <div className="w-full h-full overflow-y-auto min-h-0 p-4 lg:p-6">
+          <div className="w-full h-full overflow-y-auto min-h-0 p-4 lg:p-6 pb-28">
             <div className="max-w-5xl mx-auto">
               <DdmaDirectiveModal scenario={currentScenario} />
             </div>
