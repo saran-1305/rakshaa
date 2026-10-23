@@ -7,7 +7,7 @@ venv/
 env/
 .vscode/
 .idea/
-RAKSHA_Project.zip
+*.zip
 *.log
 templates/*_step*.html
 node_modules/
